@@ -1,0 +1,11 @@
+- insert:
+    - id: tool-result-trimmer
+      name: dsh-tool-result-trimmer
+      config:
+        enabled: true
+        thresholdChars: 10000
+        headChars: 1500
+        tailChars: 5000
+        excludeTools:
+          - read
+          - read_image
