@@ -1,0 +1,50 @@
+{
+  "name": "dsh-tool-result-trimmer",
+  "version": "1.0.0",
+  "description": "Eager, tail-heavy, line-aware tool result trimmer plugin for DeepSeek Harness (dsh) and Cordis.",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node --test"
+  },
+  "author": "Jaylor-Wang",
+  "license": "MIT",
+  "homepage": "https://github.com/Jaylor-Wang/dsh-tool-result-trimmer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jaylor-Wang/dsh-tool-result-trimmer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Jaylor-Wang/dsh-tool-result-trimmer/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "trimmer",
+    "tool-result",
+    "context-optimization"
+  ],
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "lib",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0",
+    "@deepseek-ai/schemastery": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  }
+}
