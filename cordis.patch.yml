@@ -3,6 +3,7 @@
       name: dsh-tool-result-trimmer
       config:
         enabled: true
+        stripAnsi: true
         thresholdChars: 10000
         headChars: 1500
         tailChars: 5000

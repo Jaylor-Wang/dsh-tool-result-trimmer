@@ -1,6 +1,23 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { trimToolText, trimToolContent, computeSnapPoints, countLines } from '../lib/trimmer.js';
+import { trimToolText, trimToolContent, computeSnapPoints, countLines, stripAnsi } from '../lib/trimmer.js';
+
+describe('stripAnsi', () => {
+  it('should strip SGR color and styling codes', () => {
+    const colored = '\x1b[31mError:\x1b[0m \x1b[1;32mBuild succeeded\x1b[0m in \x1b[4m200ms\x1b[24m';
+    assert.equal(stripAnsi(colored), 'Error: Build succeeded in 200ms');
+  });
+
+  it('should strip cursor controls, clear line, and OSC title codes', () => {
+    const raw = '\x1b[2K\x1b[1GProgress: 100%\x1b[?25h\x1b(B \x1b]0;npm install\x07Done';
+    assert.equal(stripAnsi(raw), 'Progress: 100% Done');
+  });
+
+  it('should leave plain text completely unchanged', () => {
+    const plain = 'Normal text without escape codes 12345.';
+    assert.equal(stripAnsi(plain), plain);
+  });
+});
 
 describe('trimToolText', () => {
   it('should not trim text below threshold', () => {
@@ -132,5 +149,23 @@ describe('trimToolContent', () => {
     const res = trimToolContent(blocks, { thresholdChars: 10000 });
     assert.equal(res.changed, false);
     assert.equal(res.content, blocks);
+  });
+
+  it('should strip ANSI escape sequences even if text is within threshold', () => {
+    const blocks = [
+      { type: 'text', text: '\x1b[32mPASS\x1b[0m test/app.test.js' }
+    ];
+    const res = trimToolContent(blocks, { thresholdChars: 10000, stripAnsi: true });
+    assert.equal(res.changed, true);
+    assert.equal(res.content[0].text, 'PASS test/app.test.js');
+  });
+
+  it('should respect stripAnsi: false and keep ANSI if requested', () => {
+    const blocks = [
+      { type: 'text', text: '\x1b[32mPASS\x1b[0m test/app.test.js' }
+    ];
+    const res = trimToolContent(blocks, { thresholdChars: 10000, stripAnsi: false });
+    assert.equal(res.changed, false);
+    assert.equal(res.content[0].text, '\x1b[32mPASS\x1b[0m test/app.test.js');
   });
 });

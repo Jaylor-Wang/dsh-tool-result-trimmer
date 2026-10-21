@@ -23,7 +23,9 @@ Traditional context optimization tools (like compaction pruners) act **passively
    Most command failures, build errors, and test assertions display critical failure information and exit codes at the **tail** of the output. By default, `dsh-tool-result-trimmer` preserves **1,500 characters at the head** (arguments, initial states) and **5,000 characters at the tail** (stack traces, exit codes).
 3. **Line-Aware Snapping**:
    Never cuts arbitrarily at character offsets. Instead, it snaps boundaries to adjacent newlines (`\n`). Code lines, JSON structures, and error messages remain syntactically complete without broken words or surrogate corruption.
-4. **Zero-Side-Effect Safeguards**:
+4. **ANSI Escape Sequence Stripping**:
+   Automatically identifies and scrubs terminal ANSI color codes (`\x1b[31m`), cursor controls, and line clearing sequences (`\x1b[2K`, `\x1b[1G`), eliminating token waste and noisy artifacts to keep terminal output crystal clear for LLMs.
+5. **Zero-Side-Effect Safeguards**:
    - **File Read Protection**: Automatically bypasses `read` and `read_image` tools to avoid disrupting file inspection with line-number references.
    - **Rich Block Preservation**: Non-text blocks (e.g., images) are preserved completely untouched.
 
@@ -55,6 +57,7 @@ Add the plugin to your `cordis.patch.yml` or agent preset:
 - name: dsh-tool-result-trimmer
   config:
     enabled: true
+    stripAnsi: true           # Strip terminal ANSI escape codes (default: true)
     thresholdChars: 10000     # Trigger trimming when output exceeds 10,000 chars
     headChars: 1500           # Characters retained at the head
     tailChars: 5000           # Characters retained at the tail
@@ -68,6 +71,7 @@ Add the plugin to your `cordis.patch.yml` or agent preset:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | Whether the trimmer is enabled. |
+| `stripAnsi` | `boolean` | `true` | Whether to strip terminal ANSI escape codes and styling (saves tokens). |
 | `thresholdChars` | `number` | `10000` | Safety threshold (in characters). Outputs below this threshold pass untouched with 0 overhead. |
 | `headChars` | `number` | `1500` | Character budget for output head (keeps command invocation & starting context). |
 | `tailChars` | `number` | `5000` | Character budget for output tail (keeps errors, stack traces, exit codes). |

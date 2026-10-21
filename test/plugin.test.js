@@ -94,4 +94,23 @@ describe('tool-result-trimmer plugin', () => {
     assert.equal(decision.kind, 'block');
     assert.equal(decision.feedback[0].text, 'Blocked by policy');
   });
+
+  it('should strip ANSI escape sequences from accepted bash results', async () => {
+    const ctx = createMockCtx();
+    apply(ctx, { stripAnsi: true });
+
+    const handler = ctx.listeners[0].handler;
+
+    const exec = { name: 'bash', callId: 'call-4' };
+    const result = {
+      content: [{ type: 'text', text: '\x1b[1;31mFAIL\x1b[0m test/suite.js' }],
+      isError: true
+    };
+    const next = async () => ({ kind: 'accept' });
+
+    const decision = await handler(exec, result, next);
+
+    assert.equal(decision.kind, 'accept');
+    assert.equal(decision.content[0].text, 'FAIL test/suite.js');
+  });
 });

@@ -23,7 +23,9 @@
    命令行与编译测试的最关键报错信息（断言失败、异常堆栈、Exit Code）永远在末尾。默认策略：**头部保留 1,500 字符**（查看命令启动入参与初始状态），**尾部保留 5,000 字符**（完整保留关键报错与原因）。
 3. **行吸附算法（Line-Aware Snapping · 绝不截断代码行）**：
    不按死板字符索引生硬切割，而是动态吸附到最近的换行符（`\n`）。保证头部在完整行末尾结束，尾部从新行行首开始，彻底杜绝半截单词、JSON/XML 语法破碎与 UTF-8 字符损坏。
-4. **零副作用安全保护**：
+4. **终端 ANSI 控制字符自动剥离（Clean Terminal Output）**：
+   自动识别并清洗终端 ANSI 颜色转义码（`\x1b[31m` 等）、光标移动/清行控制序列（`\x1b[2K`、`\x1b[1G`）及窗口标题序列，杜绝无意义杂质字符浪费 Token，大幅提升模型对编译报错与日志信息的解析精度。
+5. **零副作用安全保护**：
    - **文件读取保护**：默认自动跳过 `read` 与 `read_image` 工具，保证文件查看行号与内容绝对精准。
    - **多模态内容保护**：图片等非文本块原样透传，不影响任何多模态交互。
 
@@ -55,10 +57,11 @@ pnpm add dsh-tool-result-trimmer
 - name: dsh-tool-result-trimmer
   config:
     enabled: true
+    stripAnsi: true           # 自动剥离终端 ANSI 颜色与光标控制序列（默认 true）
     thresholdChars: 10000     # 触发裁剪的安全阈值（低于此值 0 开销原样放行）
     headChars: 1500           # 头部保留字符预算（观察命令入参与初始状态）
     tailChars: 5000           # 尾部保留字符预算（完整保留报错堆栈与退出码）
-    excludeTools:             # 排除的工具列表，不参与裁剪
+    excludeTools:             # 排除的工具列表，不参与裁剪与清洗
       - read
       - read_image
 ```
@@ -68,10 +71,11 @@ pnpm add dsh-tool-result-trimmer
 | 字段 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | 是否启用该修剪插件。 |
+| `stripAnsi` | `boolean` | `true` | 是否自动剥离终端 ANSI 颜色与光标控制字符（大幅节省 Token）。 |
 | `thresholdChars` | `number` | `10000` | 安全触发阈值（字符数）。输出小于等于该值时直接放行，0 额外损耗。 |
 | `headChars` | `number` | `1500` | 头部保留字符预算（保留初始执行上下文）。 |
 | `tailChars` | `number` | `5000` | 尾部保留字符预算（优先保留错误堆栈与退出状态）。 |
-| `excludeTools` | `string[]` | `['read', 'read_image']` | 免于裁剪的工具列表。 |
+| `excludeTools` | `string[]` | `['read', 'read_image']` | 免于裁剪与清洗的工具列表。 |
 
 ---
 

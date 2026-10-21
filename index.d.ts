@@ -3,6 +3,8 @@ import type { Context } from '@deepseek-ai/cordis';
 export interface ToolResultTrimmerConfig {
   /** Whether the trimmer is enabled. Default: true */
   enabled?: boolean;
+  /** Whether to strip ANSI colors and terminal cursor controls from outputs. Default: true */
+  stripAnsi?: boolean;
   /** Character threshold above which trimming is triggered. Default: 10000 */
   thresholdChars?: number;
   /** Retained character budget for head (command args / start state). Default: 1500 */
@@ -15,6 +17,8 @@ export interface ToolResultTrimmerConfig {
 
 export declare const name: 'tool-result-trimmer';
 export declare const Config: any;
+export declare const ANSI_REGEX: RegExp;
+export declare function stripAnsi(text: string): string;
 export declare function apply(ctx: Context, config?: ToolResultTrimmerConfig): void;
 
 declare const _default: {
