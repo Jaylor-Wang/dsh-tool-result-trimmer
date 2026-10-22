@@ -113,4 +113,52 @@ describe('tool-result-trimmer plugin', () => {
     assert.equal(decision.kind, 'accept');
     assert.equal(decision.content[0].text, 'FAIL test/suite.js');
   });
+
+  it('should trim multi-block tool output when aggregate text exceeds threshold', async () => {
+    const ctx = createMockCtx();
+    apply(ctx, {
+      thresholdChars: 1500,
+      headChars: 300,
+      tailChars: 300
+    });
+
+    const handler = ctx.listeners[0].handler;
+
+    const exec = { name: 'custom_tool', callId: 'call-5' };
+    const result = {
+      content: [
+        { type: 'text', text: 'Step 1 stdout:\n' + 'Log line info...\n'.repeat(25) }, // ~400 chars
+        { type: 'text', text: 'Step 2 stderr:\n' + 'Error line info...\n'.repeat(100) } // ~1800 chars
+      ],
+      isError: true
+    };
+    const next = async () => ({ kind: 'accept' });
+
+    const decision = await handler(exec, result, next);
+
+    assert.equal(decision.kind, 'accept');
+    assert.ok(decision.content);
+    const totalChars = decision.content.reduce((sum, b) => sum + (b.text?.length ?? 0), 0);
+    assert.ok(totalChars < 1200);
+    assert.ok(decision.content[0].text.startsWith('Step 1 stdout:\n'));
+  });
+
+  it('should emit a warning when thresholdChars is less than headChars + tailChars', () => {
+    const warnings = [];
+    const ctx = {
+      ...createMockCtx(),
+      logger: {
+        warn(msg) {
+          warnings.push(msg);
+        }
+      }
+    };
+    apply(ctx, {
+      thresholdChars: 3000,
+      headChars: 2000,
+      tailChars: 2000
+    });
+    assert.equal(warnings.length, 1);
+    assert.ok(warnings[0].includes('thresholdChars (3000) is less than headChars + tailChars (4000)'));
+  });
 });

@@ -72,7 +72,7 @@ pnpm add dsh-tool-result-trimmer
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | 是否启用该修剪插件。 |
 | `stripAnsi` | `boolean` | `true` | 是否自动剥离终端 ANSI 颜色与光标控制字符（大幅节省 Token）。 |
-| `thresholdChars` | `number` | `10000` | 安全触发阈值（字符数）。输出小于等于该值时直接放行，0 额外损耗。 |
+| `thresholdChars` | `number` | `10000` | 安全触发阈值（字符数）。建议配置大于 `headChars + tailChars`（默认 6500）。输出小于等于该值或未超出保留预算总和时直接放行，零对象分配。 |
 | `headChars` | `number` | `1500` | 头部保留字符预算（保留初始执行上下文）。 |
 | `tailChars` | `number` | `5000` | 尾部保留字符预算（优先保留错误堆栈与退出状态）。 |
 | `excludeTools` | `string[]` | `['read', 'read_image']` | 免于裁剪与清洗的工具列表。 |

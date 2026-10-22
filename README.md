@@ -72,7 +72,7 @@ Add the plugin to your `cordis.patch.yml` or agent preset:
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | Whether the trimmer is enabled. |
 | `stripAnsi` | `boolean` | `true` | Whether to strip terminal ANSI escape codes and styling (saves tokens). |
-| `thresholdChars` | `number` | `10000` | Safety threshold (in characters). Outputs below this threshold pass untouched with 0 overhead. |
+| `thresholdChars` | `number` | `10000` | Safety threshold (in characters). Recommended to exceed `headChars + tailChars` (default 6500). Outputs below threshold or within budget sum pass through with zero object allocations. |
 | `headChars` | `number` | `1500` | Character budget for output head (keeps command invocation & starting context). |
 | `tailChars` | `number` | `5000` | Character budget for output tail (keeps errors, stack traces, exit codes). |
 | `excludeTools` | `string[]` | `['read', 'read_image']` | Tool names excluded from trimming. |
