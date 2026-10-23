@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { trimToolText, trimToolContent, computeSnapPoints, countLines, stripAnsi } from '../lib/trimmer.js';
+import { trimToolText, trimToolContent, computeSnapPoints, countLines, stripAnsi, isBypassed } from '../lib/trimmer.js';
 
 describe('stripAnsi', () => {
   it('should strip SGR color and styling codes', () => {
@@ -295,5 +295,51 @@ describe('trimToolContent', () => {
     assert.equal(res.changed, false);
     assert.equal(res.content[0].text, text);
     assert.equal(res.totalOmittedChars, 0);
+  });
+});
+
+describe('isBypassed', () => {
+  it('should return false for undefined or empty exec', () => {
+    assert.equal(isBypassed(undefined), false);
+    assert.equal(isBypassed(null), false);
+    assert.equal(isBypassed({}), false);
+  });
+
+  it('should detect explicit bypassTrim and noTrim argument flags', () => {
+    assert.equal(isBypassed({ arguments: { bypassTrim: true } }), true);
+    assert.equal(isBypassed({ arguments: { noTrim: true } }), true);
+    assert.equal(isBypassed({ arguments: { _bypassTrim: true } }), true);
+    assert.equal(isBypassed({ arguments: { bypassTrim: false } }), false);
+  });
+
+  it('should detect environment variable prefixes in command strings', () => {
+    assert.equal(isBypassed({ arguments: { command: 'DSH_TRIM_BYPASS=1 npm test' } }), true);
+    assert.equal(isBypassed({ arguments: { command: 'VAR=1 DSH_NO_TRIM=1 pytest' } }), true);
+    assert.equal(isBypassed({ arguments: { command: 'cd src && NO_TRIM=1 cargo check' } }), true);
+    assert.equal(isBypassed({ arguments: { command: 'npm test DSH_TRIM_BYPASS=0' } }), false);
+    assert.equal(isBypassed({ arguments: { command: 'npm test' } }), false);
+  });
+
+  it('should detect inline comment directives in command strings and descriptions', () => {
+    assert.equal(isBypassed({ arguments: { command: 'npm test # no-trim' } }), true);
+    assert.equal(isBypassed({ arguments: { command: 'git diff # [no-trim]' } }), true);
+    assert.equal(isBypassed({ arguments: { command: 'node build.js // bypass-trim' } }), true);
+    assert.equal(isBypassed({ arguments: { command: 'cat file.txt # raw-output' } }), true);
+    assert.equal(isBypassed({ arguments: { command: 'git log', description: 'check commits # no-trim' } }), true);
+    assert.equal(isBypassed({ arguments: { command: 'npm test # ordinary comment' } }), false);
+  });
+
+  it('should respect process.env override when set', () => {
+    const orig = process.env.DSH_TRIM_BYPASS;
+    try {
+      process.env.DSH_TRIM_BYPASS = '1';
+      assert.equal(isBypassed({ arguments: { command: 'npm test' } }), true);
+    } finally {
+      if (orig !== undefined) {
+        process.env.DSH_TRIM_BYPASS = orig;
+      } else {
+        delete process.env.DSH_TRIM_BYPASS;
+      }
+    }
   });
 });

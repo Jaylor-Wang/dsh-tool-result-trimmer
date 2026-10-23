@@ -21,13 +21,19 @@
    直接挂载于 DSH 官方 `tools/post-execute` 瀑布流流水线。超长结果在进入持久化日志、提交给模型上下文之前就已经被裁剪完毕。
 2. **权重倒置（Tail-Heavy · 强化尾部）**：
    命令行与编译测试的最关键报错信息（断言失败、异常堆栈、Exit Code）永远在末尾。默认策略：**头部保留 1,500 字符**（查看命令启动入参与初始状态），**尾部保留 5,000 字符**（完整保留关键报错与原因）。
-3. **行吸附算法（Line-Aware Snapping · 绝不截断代码行）**：
+3. **命令感知语义压缩器（Semantic Reducers · 严格 Fail-Open）**：
+   内置针对高频开发命令的智能提纯器。在进入截断前优先提纯信息，**遇错严格放行（Fail-Open）**：
+   - **Git Reducer**：干净工作区一键收敛为单行，脏工作区自动剥离 `(use "git add...")` 样板提示，100% 完整保留修改文件列表；剥离 `git diff` 无效的 `index` 哈希行。
+   - **Package Manager Reducer**：自动过滤 `npm`/`pnpm`/`yarn`/`pip` 进度条、peer deprecation 杂讯、funding 提示与升级提醒，完整保留安装包统计与漏洞审计。
+   - **Test Reducer**：当且仅当测试全量通过时（`node --test`, `vitest`, `pytest`, `cargo test` 等），将数百行冗长打勾日志折叠为单行摘要；一旦有任何用例失败，**绝不压缩，完整保留所有报错堆栈与断言现场**。
+4. **行吸附算法（Line-Aware Snapping · 绝不截断代码行）**：
    不按死板字符索引生硬切割，而是动态吸附到最近的换行符（`\n`）。保证头部在完整行末尾结束，尾部从新行行首开始，彻底杜绝半截单词、JSON/XML 语法破碎与 UTF-8 字符损坏。
-4. **终端 ANSI 控制字符自动剥离（Clean Terminal Output）**：
+5. **终端 ANSI 控制字符自动剥离（Clean Terminal Output）**：
    自动识别并清洗终端 ANSI 颜色转义码（`\x1b[31m` 等）、光标移动/清行控制序列（`\x1b[2K`、`\x1b[1G`）及窗口标题序列，杜绝无意义杂质字符浪费 Token，大幅提升模型对编译报错与日志信息的解析精度。
-5. **零副作用安全保护**：
+6. **零副作用安全保护**：
    - **文件读取保护**：默认自动跳过 `read` 与 `read_image` 工具，保证文件查看行号与内容绝对精准。
    - **多模态内容保护**：图片等非文本块原样透传，不影响任何多模态交互。
+   - **紧急逃生机制（Bypass）**：支持命令内标记（`# no-trim`、`DSH_TRIM_BYPASS=1`）快速全量放行。
 
 ---
 
@@ -64,6 +70,18 @@ pnpm add dsh-tool-result-trimmer
     excludeTools:             # 排除的工具列表，不参与裁剪与清洗
       - read
       - read_image
+    overrides:                # 针对特定工具的差异化预算或独立开关
+      bash:
+        thresholdChars: 15000
+        headChars: 2000
+        tailChars: 8000
+      git:
+        enabled: false        # 单独对此工具关闭裁剪
+    semanticReducers:         # 命令感知语义压缩器控制
+      enabled: true           # 是否启用语义压缩（默认 true）
+      git: true               # Git 状态与差异提纯
+      packageManager: true    # npm / pnpm / yarn / pip 冗余过滤
+      test: true              # 测试全通折叠与严格 Fail-Open
 ```
 
 ### 配置项说明
@@ -72,10 +90,35 @@ pnpm add dsh-tool-result-trimmer
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | 是否启用该修剪插件。 |
 | `stripAnsi` | `boolean` | `true` | 是否自动剥离终端 ANSI 颜色与光标控制字符（大幅节省 Token）。 |
-| `thresholdChars` | `number` | `10000` | 安全触发阈值（字符数）。建议配置大于 `headChars + tailChars`（默认 6500）。输出小于等于该值或未超出保留预算总和时直接放行，零对象分配。 |
-| `headChars` | `number` | `1500` | 头部保留字符预算（保留初始执行上下文）。 |
-| `tailChars` | `number` | `5000` | 尾部保留字符预算（优先保留错误堆栈与退出状态）。 |
+| `thresholdChars` | `number` | `10000` | 全局安全触发阈值（字符数）。建议配置大于 `headChars + tailChars`（默认 6500）。输出小于等于该值或未超出保留预算总和时直接放行，零对象分配。 |
+| `headChars` | `number` | `1500` | 全局头部保留字符预算（保留初始执行上下文）。 |
+| `tailChars` | `number` | `5000` | 全局尾部保留字符预算（优先保留错误堆栈与退出状态）。 |
 | `excludeTools` | `string[]` | `['read', 'read_image']` | 免于裁剪与清洗的工具列表。 |
+| `overrides` | `Record<string, ToolOverride>` | `{}` | 分工具差异化配置字典。支持单独设置特定工具的 `thresholdChars`、`headChars`、`tailChars`、`stripAnsi`，或设置 `enabled: false` 彻底跳过该工具。 |
+| `semanticReducers` | `object` | `{ enabled: true, ... }` | 命令感知语义压缩器配置。包含 `enabled`、`git`、`packageManager`、`test` 开关，可单独按需控制。 |
+
+---
+
+## 紧急逃生通道（Bypass 机制）
+
+当大模型或用户在特定调试场景下需要**获取完整原始输出（完全不被裁剪和清洗）**时，支持以下几种逃生方式：
+
+1. **命令前缀环境变量**（最适合 Bash 命令）：
+   ```bash
+   DSH_TRIM_BYPASS=1 npm test
+   # 或
+   DSH_NO_TRIM=1 cargo check
+   ```
+2. **命令内联注释指令**（自然且直观）：
+   ```bash
+   git diff # no-trim
+   # 或
+   node test.js // bypass-trim
+   ```
+3. **工具调用参数声明**：
+   在工具参数对象中传入 `bypassTrim: true` 或 `noTrim: true`。
+4. **全局进程环境变量**：
+   设置环境变量 `DSH_TRIM_BYPASS=1`，全局放行所有工具输出。
 
 ---
 
