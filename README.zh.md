@@ -62,7 +62,19 @@ pnpm add dsh-tool-result-trimmer
 
 ## 配置使用
 
-在你的 `cordis.patch.yml` 或自定义预设中添加：
+### 1. 开箱即用（推荐，零配置）
+
+所有核心功能（即时首尾裁剪、ANSI 清理、命令语义压缩、结构化 JSON 保护以及本地 Spillover 落盘恢复）**默认全部启用，开箱即用无需任何额外配置**。
+
+在你的 `cordis.patch.yml` 或自定义预设中仅需声明插件名称即可：
+
+```yaml
+- name: dsh-tool-result-trimmer
+```
+
+### 2. 高级自定义配置（可选）
+
+如需定制字符预算、切换特定压缩器、修改落盘目录或指定单工具预算，仅需声明需要定制的字段即可（所有字段均为可选）：
 
 ```yaml
 - name: dsh-tool-result-trimmer

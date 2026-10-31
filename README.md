@@ -62,7 +62,19 @@ pnpm add dsh-tool-result-trimmer
 
 ## Configuration
 
-Add the plugin to your `cordis.patch.yml` or agent preset:
+### 1. Zero-Config (Recommended)
+
+All core features—including eager tail-heavy trimming, ANSI stripping, command-aware semantic reducers, structured JSON protection, and disk spillover recovery—are **active out-of-the-box with zero configuration required**.
+
+Simply add the plugin to your `cordis.patch.yml` or agent preset:
+
+```yaml
+- name: dsh-tool-result-trimmer
+```
+
+### 2. Custom Configuration (Optional)
+
+If you wish to customize budgets, per-tool overrides, spillover directories, or individual toggles, specify only the fields you want to override. All fields are optional:
 
 ```yaml
 - name: dsh-tool-result-trimmer
