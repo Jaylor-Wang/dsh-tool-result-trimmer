@@ -7,7 +7,7 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-**`dsh-tool-result-trimmer`** is a lightweight, zero-dependency Cordis plugin designed for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness). It hooks into the tool execution pipeline to eagerly trim oversized tool outputs (such as massive compiler errors, verbose test outputs, or long command logs) before they pollute the conversation session log and LLM context.
+**`dsh-tool-result-trimmer`** is a lightweight, zero-dependency Cordis plugin designed for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness). It hooks into the tool execution pipeline to eagerly trim oversized tool outputs, intelligently refine frequent command logs, protect structured JSON, and optionally persist recoverable raw text before polluting conversation session logs and LLM context.
 
 ---
 
@@ -27,11 +27,15 @@ Traditional context optimization tools (like compaction pruners) act **passively
    - **Package Manager Reducer**: Scrubs progress spinners, peer deprecation notices, update announcements, and funding prompts in `npm`, `pnpm`, `yarn`, and `pip`, cleanly preserving package audits and vulnerability diagnostics.
    - **Test Reducer**: When all test suites pass cleanly (`node --test`, `vitest`, `pytest`, `cargo test`), collapses pages of individual passed ticks into a clean 1-line summary. **Strictly fails open on any test failure or non-zero exit code**, preserving every stack trace and assertion error.
    - **Build and Lint Reducers**: Conservatively remove recognized path-free Vite/Cargo/webpack progress or duplicate Prettier check progress after explicit success; warnings, errors, paths, and unrecognized output are retained.
-4. **Line-Aware Snapping**:
-   Prefers nearby newlines (`\n`) and falls back to character boundaries when necessary, without splitting surrogate pairs. Complete JSON is protected separately by default.
-5. **ANSI Escape Sequence Stripping**:
+4. **Structured JSON Protection**:
+   Complete JSON outputs are preserved verbatim by default (`mode: preserve`) even above thresholds, avoiding broken syntax. Opt-in array summarization (`mode: summary`) safely samples large top-level arrays into valid, explicitly marked JSON summaries, or reverts to legacy trimming (`mode: off`).
+5. **Controlled Recoverable Spillover**:
+   Optionally offloads truncated raw outputs to local disk (`spillover.enabled: true`) and annotates the banner with the absolute file path, enabling agents or developers to inspect full raw details on demand without re-running long operations. Includes atomic writes, bounded capacity limits, TTL expiration, and cross-process directory locking.
+6. **Line-Aware Snapping**:
+   Prefers nearby newlines (`\n`) and falls back to character boundaries when necessary, without splitting surrogate pairs.
+7. **ANSI Escape Sequence Stripping**:
    Automatically identifies and scrubs terminal ANSI color codes (`\x1b[31m`), cursor controls, and line clearing sequences (`\x1b[2K`, `\x1b[1G`), eliminating token waste and noisy artifacts to keep terminal output crystal clear for LLMs.
-6. **Zero-Side-Effect Safeguards**:
+8. **Zero-Side-Effect Safeguards**:
    - **File Read Protection**: Automatically bypasses `read` and `read_image` tools to avoid disrupting file inspection with line-number references.
    - **Rich Block Preservation**: Non-text blocks (e.g., images) are preserved completely untouched.
    - **Escape Hatch (Bypass)**: Immediate pass-through via inline directives (`# no-trim`) or environment flags (`DSH_TRIM_BYPASS=1`).

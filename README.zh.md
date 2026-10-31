@@ -7,7 +7,7 @@
 
 [English](README.md) | 中文
 
-**`dsh-tool-result-trimmer`** 是专为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 与 Cordis 打造的轻量级、零运行时依赖的**即时工具输出修剪插件**。它直接挂载在工具执行流水线上，在超大输出（如编译报错海量输出、冗长测试日志、长命令滚屏）进入会话历史与 LLM 上下文之前实现即时裁剪，从源头杜绝上下文污染。
+**`dsh-tool-result-trimmer`** 是专为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 与 Cordis 打造的轻量级、零运行时依赖的**即时工具输出修剪插件**。它直接挂载在工具执行流水线上，在超大输出进入会话历史与 LLM 上下文之前实现即时裁剪、命令感知语义提纯、结构化 JSON 保护与可追溯磁盘恢复，从源头杜绝上下文污染。
 
 ---
 
@@ -27,11 +27,15 @@
    - **Package Manager Reducer**：自动过滤 `npm`/`pnpm`/`yarn`/`pip` 进度条、peer deprecation 杂讯、funding 提示与升级提醒，完整保留安装包统计与漏洞审计。
    - **Test Reducer**：当且仅当测试全量通过时（`node --test`, `vitest`, `pytest`, `cargo test` 等），将数百行冗长打勾日志折叠为单行摘要；一旦有任何用例失败，**绝不压缩，完整保留所有报错堆栈与断言现场**。
    - **Build 与 Lint Reducer**：仅在明确成功时保守压缩可识别的不含路径的 Vite/Cargo/webpack 进度或重复 Prettier 检查提示，保留 warning、error、路径及未知输出。
-4. **行吸附算法（Line-Aware Snapping · 绝不截断代码行）**：
-   优先吸附附近的换行符（`\n`），必要时回退到字符边界，并避免拆开 UTF-16 代理对。完整 JSON 默认由独立的结构化保护处理。
-5. **终端 ANSI 控制字符自动剥离（Clean Terminal Output）**：
+4. **结构化 JSON 保护（Structured Output Protection）**：
+   默认完整保留合法 JSON（`mode: preserve`），即便超出字符阈值也绝不暴力破坏语法结构；可选 `mode: summary` 安全采样超大顶层数组并生成合法的带标记 JSON 摘要；亦支持 `mode: off` 恢复旧版普通截断。
+5. **受控可追溯持久化（Controlled Spillover）**：
+   支持在裁剪发生时将完整原文原子写入本地磁盘（`spillover.enabled: true`），并在截断提示中回显恢复路径，方便 Agent 或开发者直接查看原文而无需重跑耗时任务；具备容量上限、文件数预算、TTL 过期清理及跨进程目录锁保护。
+6. **行吸附算法（Line-Aware Snapping · 绝不截断代码行）**：
+   优先吸附附近的换行符（`\n`），必要时回退到字符边界，并严格避免拆开 UTF-16 代理对。
+7. **终端 ANSI 控制字符自动剥离（Clean Terminal Output）**：
    自动识别并清洗终端 ANSI 颜色转义码（`\x1b[31m` 等）、光标移动/清行控制序列（`\x1b[2K`、`\x1b[1G`）及窗口标题序列，杜绝无意义杂质字符浪费 Token，大幅提升模型对编译报错与日志信息的解析精度。
-6. **零副作用安全保护**：
+8. **零副作用安全保护**：
    - **文件读取保护**：默认自动跳过 `read` 与 `read_image` 工具，保证文件查看行号与内容绝对精准。
    - **多模态内容保护**：图片等非文本块原样透传，不影响任何多模态交互。
    - **紧急逃生机制（Bypass）**：支持命令内标记（`# no-trim`、`DSH_TRIM_BYPASS=1`）快速全量放行。
