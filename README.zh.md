@@ -66,30 +66,21 @@ pnpm add dsh-tool-result-trimmer
 
 所有核心功能（即时首尾裁剪、ANSI 清理、命令语义压缩、结构化 JSON 保护以及本地 Spillover 落盘恢复）**默认全部启用，开箱即用无需任何额外配置**。
 
-在你的 `cordis.patch.yml` 或自定义预设中仅需声明插件名称即可：
-
-```yaml
-- name: dsh-tool-result-trimmer
-```
+如果你是通过 DSH 插件市场（Web 界面）或 `dsh plugin add` 安装的，插件已作为 Bundle 自动装载并生效。**无需修改或添加任何 `cordis.patch.yml` 配置。**
 
 ### 2. 高级自定义配置（可选）
 
-如需定制字符预算、切换特定压缩器、修改落盘目录或指定单工具预算，仅需声明需要定制的字段即可（所有字段均为可选）：
+如需定制字符预算、切换特定压缩器、修改落盘目录或指定单工具预算，仅需在你的 profile `cordis.patch.yml` 中通过插件唯一 ID `tool-result-trimmer` 覆盖需要定制的字段（未声明字段自动沿用默认值）：
 
 ```yaml
-- name: dsh-tool-result-trimmer
+- id: tool-result-trimmer
   config:
-    enabled: true
-    stripAnsi: true           # 自动剥离终端 ANSI 颜色与光标控制序列（默认 true）
-    thresholdChars: 10000     # 触发裁剪的安全阈值（低于此值 0 开销原样放行）
-    headChars: 1500           # 头部保留字符预算（观察命令入参与初始状态）
-    tailChars: 5000           # 尾部保留字符预算（完整保留报错堆栈与退出码）
-    excludeTools:             # 排除的工具列表，不参与裁剪与清洗
-      - read
-      - read_image
+    thresholdChars: 15000     # 触发裁剪的安全阈值（默认 10000）
+    headChars: 2000           # 头部保留字符预算（默认 1500）
+    tailChars: 8000           # 尾部保留字符预算（默认 5000）
     overrides:                # 针对特定工具的差异化预算或独立开关
       bash:
-        thresholdChars: 15000
+        thresholdChars: 20000
         headChars: 2000
         tailChars: 8000
       git:
@@ -105,7 +96,7 @@ pnpm add dsh-tool-result-trimmer
       mode: preserve          # preserve（默认）、summary 或 off
     metrics:
       enabled: false          # 显式启用计数，通过 Cordis logger 输出
-    spillover:                # 受控的截断内容本地落盘（Spillover）备份
+    spillover:                # 受控的截断内容本地落盘备份
       enabled: true           # 是否在发生机械裁剪时将完整原文落盘（默认 true）
       directory: null         # 存储目录（null 默认使用系统临时目录下的 dsh-trimmed）
       maxFileBytes: 20000000  # 单个备份文件最大字节数（约 20MB）
@@ -113,6 +104,20 @@ pnpm add dsh-tool-result-trimmer
       maxFiles: 1000          # 备份文件最大数量上限（1000 个）
       ttlMs: 604800000        # 日志过期清理时间（7 天）
       onSemanticReduction: false # 仅语义压缩时也保存原文并提供恢复路径
+```
+
+> **注意**：如果插件已通过 DSH 安装（已作为 bundle 装载），**请勿**在 `cordis.patch.yml` 中添加 `- name: dsh-tool-result-trimmer`，直接使用 `- id: tool-result-trimmer` 进行属性覆盖即可，避免重复注册实例化。
+
+### 3. 自定义预设或纯 Cordis 环境（高级）
+
+如果你正在自建独立的 Agent Preset，或在脱离 DSH profile bundle 体系的纯 Cordis 环境中使用，可通过包名显式声明引入：
+
+```yaml
+- name: dsh-tool-result-trimmer
+  config:
+    thresholdChars: 10000
+    spillover:
+      enabled: true
 ```
 
 ### 配置项说明

@@ -66,30 +66,21 @@ pnpm add dsh-tool-result-trimmer
 
 All core features—including eager tail-heavy trimming, ANSI stripping, command-aware semantic reducers, structured JSON protection, and disk spillover recovery—are **active out-of-the-box with zero configuration required**.
 
-Simply add the plugin to your `cordis.patch.yml` or agent preset:
-
-```yaml
-- name: dsh-tool-result-trimmer
-```
+If you installed the plugin via DSH Web GUI or `dsh plugin add`, it is already registered as a bundle and loaded automatically. **No edits to `cordis.patch.yml` are required.**
 
 ### 2. Custom Configuration (Optional)
 
-If you wish to customize budgets, per-tool overrides, spillover directories, or individual toggles, specify only the fields you want to override. All fields are optional:
+If you wish to customize budgets, per-tool overrides, or spillover directories, override only the specific fields in your profile's `cordis.patch.yml` using the bundle ID `tool-result-trimmer`:
 
 ```yaml
-- name: dsh-tool-result-trimmer
+- id: tool-result-trimmer
   config:
-    enabled: true
-    stripAnsi: true           # Strip terminal ANSI escape codes (default: true)
-    thresholdChars: 10000     # Trigger trimming when output exceeds 10,000 chars
-    headChars: 1500           # Characters retained at the head
-    tailChars: 5000           # Characters retained at the tail
-    excludeTools:             # Tools excluded from trimming
-      - read
-      - read_image
+    thresholdChars: 15000     # Trigger trimming when output exceeds 15,000 chars (default: 10000)
+    headChars: 2000           # Characters retained at the head (default: 1500)
+    tailChars: 8000           # Characters retained at the tail (default: 5000)
     overrides:                # Per-tool custom budgets and flags
       bash:
-        thresholdChars: 15000
+        thresholdChars: 20000
         headChars: 2000
         tailChars: 8000
       git:
@@ -113,6 +104,20 @@ If you wish to customize budgets, per-tool overrides, spillover directories, or 
       maxFiles: 1000          # Max files to retain
       ttlMs: 604800000        # Retention TTL (7 days)
       onSemanticReduction: false # Also save semantic-only reductions and show a recovery path
+```
+
+> **Note**: Do not add `- name: dsh-tool-result-trimmer` to your `cordis.patch.yml` if the plugin was already installed via DSH; targeting `- id: tool-result-trimmer` correctly overrides properties without instantiating duplicate plugin instances.
+
+### 3. Custom Presets or Standalone Cordis (Advanced)
+
+If you are composing a custom agent preset or using Cordis outside the DSH profile bundle system, declare the plugin entry by name:
+
+```yaml
+- name: dsh-tool-result-trimmer
+  config:
+    thresholdChars: 10000
+    spillover:
+      enabled: true
 ```
 
 ### Options
