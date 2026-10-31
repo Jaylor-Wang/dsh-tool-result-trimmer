@@ -1,6 +1,16 @@
-import { describe, it } from 'node:test';
+import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { apply } from '../lib/index.js';
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-trimmer-plugin-'));
+after(() => {
+  assert.equal(path.dirname(root), path.resolve(os.tmpdir()));
+  assert.ok(path.basename(root).startsWith('dsh-trimmer-plugin-'));
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
 describe('tool-result-trimmer plugin', () => {
   function createMockCtx() {
@@ -33,7 +43,8 @@ describe('tool-result-trimmer plugin', () => {
       thresholdChars: 1000,
       headChars: 200,
       tailChars: 300,
-      excludeTools: ['read']
+      excludeTools: ['read'],
+      spillover: { directory: root }
     });
 
     const handler = ctx.listeners[0].handler;
@@ -59,7 +70,8 @@ describe('tool-result-trimmer plugin', () => {
       thresholdChars: 1000,
       headChars: 200,
       tailChars: 300,
-      excludeTools: ['read']
+      excludeTools: ['read'],
+      spillover: { directory: root }
     });
 
     const handler = ctx.listeners[0].handler;
@@ -119,7 +131,8 @@ describe('tool-result-trimmer plugin', () => {
     apply(ctx, {
       thresholdChars: 1500,
       headChars: 300,
-      tailChars: 300
+      tailChars: 300,
+      spillover: { directory: root }
     });
 
     const handler = ctx.listeners[0].handler;
@@ -206,6 +219,7 @@ describe('tool-result-trimmer plugin', () => {
       thresholdChars: 1000,
       headChars: 200,
       tailChars: 300,
+      spillover: { directory: root },
       overrides: {
         bash: {
           thresholdChars: 5000, // higher threshold for bash

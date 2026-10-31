@@ -29,7 +29,7 @@ export interface SemanticReducersConfig {
 }
 
 export interface SpilloverConfig {
-  /** Whether to enable disk spillover for mechanically trimmed raw outputs. Default: false */
+  /** Whether to enable disk spillover for mechanically trimmed raw outputs. Default: true */
   enabled?: boolean;
   /** Custom directory for spillover log files. Default: os.tmpdir()/dsh-trimmed */
   directory?: string | null;
@@ -90,7 +90,7 @@ export interface ToolResultTrimmerConfig {
   overrides?: Record<string, ToolOverrideConfig>;
   /** Command-aware semantic reducers configuration. Default: { enabled: true, git: true, packageManager: true, test: true, build: true, lint: true } */
   semanticReducers?: SemanticReducersConfig;
-  /** Spillover offloading configuration for full raw output persistence. Default: { enabled: false, ... } */
+  /** Spillover offloading configuration for full raw output persistence. Default: { enabled: true, ... } */
   spillover?: SpilloverConfig;
   /** Structured JSON protection. Default: { mode: 'preserve' } */
   structuredOutput?: StructuredOutputConfig;

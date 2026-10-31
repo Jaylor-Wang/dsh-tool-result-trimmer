@@ -18,7 +18,7 @@ async function run(text, config = {}, command = 'echo secret-command', extra = {
   let handler;
   const logs = [];
   apply({ on(_event, fn) { handler = fn; }, logger: { info(...values) { logs.push(values); } } }, {
-    thresholdChars: 200, headChars: 40, tailChars: 40, ...config
+    thresholdChars: 200, headChars: 40, tailChars: 40, spillover: { directory: root }, ...config
   });
   const result = { content: [{ type: 'text', text }], ...extra };
   const decision = await handler({ name: 'bash', callId: 'sensitive-id', arguments: { command } }, result, async () => ({ kind: 'accept' }));
@@ -36,8 +36,8 @@ describe('P4 opt-in metrics', () => {
   it('reports safe counts and actual mechanical omissions without content', async () => {
     const events = [];
     const text = 'secret-output\n'.repeat(100);
-    const base = await run(text);
-    const observed = await run(text, { metrics: { enabled: true, onEvent: event => events.push(event) } });
+    const base = await run(text, { spillover: { enabled: false } });
+    const observed = await run(text, { spillover: { enabled: false }, metrics: { enabled: true, onEvent: event => events.push(event) } });
     assert.deepEqual(observed.output, base.output);
     assert.deepEqual(observed.logs, []);
     assert.equal(events.length, 1);
@@ -148,9 +148,9 @@ describe('P4 opt-in metrics', () => {
 
   it('keeps output unchanged when a callback throws or rejects', async () => {
     const text = 'x'.repeat(1000);
-    const base = await run(text);
+    const base = await run(text, { spillover: { enabled: false } });
     for (const onEvent of [() => { throw new Error('failure'); }, async () => { throw new Error('failure'); }]) {
-      const result = await run(text, { metrics: { enabled: true, onEvent } });
+      const result = await run(text, { spillover: { enabled: false }, metrics: { enabled: true, onEvent } });
       assert.deepEqual(result.output, base.output);
     }
   });
@@ -172,7 +172,10 @@ describe('P4 opt-in metrics', () => {
   it('ignores errors while reading metrics configuration', async () => {
     const metrics = { get enabled() { throw new Error('inaccessible'); } };
     const text = 'x'.repeat(1000);
-    assert.deepEqual((await run(text, { metrics })).output, (await run(text)).output);
+    assert.deepEqual(
+      (await run(text, { metrics, spillover: { enabled: false } })).output,
+      (await run(text, { spillover: { enabled: false } })).output
+    );
   });
 
   it('logs only safe fields when enabled without a callback', async () => {

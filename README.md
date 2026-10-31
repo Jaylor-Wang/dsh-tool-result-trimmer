@@ -30,7 +30,7 @@ Traditional context optimization tools (like compaction pruners) act **passively
 4. **Structured JSON Protection**:
    Complete JSON outputs are preserved verbatim by default (`mode: preserve`) even above thresholds, avoiding broken syntax. Opt-in array summarization (`mode: summary`) safely samples large top-level arrays into valid, explicitly marked JSON summaries, or reverts to legacy trimming (`mode: off`).
 5. **Controlled Recoverable Spillover**:
-   Optionally offloads truncated raw outputs to local disk (`spillover.enabled: true`) and annotates the banner with the absolute file path, enabling agents or developers to inspect full raw details on demand without re-running long operations. Includes atomic writes, bounded capacity limits, TTL expiration, and cross-process directory locking.
+   Offloads truncated raw outputs to local disk by default (`spillover.enabled: true`) and annotates the banner with the absolute file path, enabling agents or developers to inspect full raw details on demand without re-running long operations. Includes atomic writes, bounded capacity limits, TTL expiration, and cross-process directory locking.
 6. **Line-Aware Snapping**:
    Prefers nearby newlines (`\n`) and falls back to character boundaries when necessary, without splitting surrogate pairs.
 7. **ANSI Escape Sequence Stripping**:
@@ -94,7 +94,7 @@ Add the plugin to your `cordis.patch.yml` or agent preset:
     metrics:
       enabled: false          # Opt-in counts only; logs through the Cordis logger
     spillover:                # Controlled disk spillover for full output recovery
-      enabled: false          # Offload raw outputs to disk on truncation (default: false)
+      enabled: true           # Offload raw outputs to disk on truncation (default: true)
       directory: null         # Storage dir (null defaults to os.tmpdir()/dsh-trimmed)
       maxFileBytes: 20000000  # Max single file size (~20MB)
       maxTotalBytes: 200000000 # Max total disk budget (~200MB)
@@ -115,7 +115,7 @@ Add the plugin to your `cordis.patch.yml` or agent preset:
 | `excludeTools` | `string[]` | `['read', 'read_image']` | Tool names excluded from trimming. |
 | `overrides` | `Record<string, ToolOverride>` | `{}` | Per-tool budget overrides and toggles. Supports custom `thresholdChars`, `headChars`, `tailChars`, `stripAnsi`, or `enabled: false`. |
 | `semanticReducers` | `object` | `{ enabled: true, ... }` | Command-aware semantic reducers settings (`enabled`, `git`, `packageManager`, `test`, `build`, `lint`). |
-| `spillover` | `object` | `{ enabled: false, ... }` | Controlled disk spillover settings (`enabled`, `directory`, `maxFileBytes`, `maxTotalBytes`, `maxFiles`, `ttlMs`, `onSemanticReduction`). |
+| `spillover` | `object` | `{ enabled: true, ... }` | Controlled disk spillover settings (`enabled`, `directory`, `maxFileBytes`, `maxTotalBytes`, `maxFiles`, `ttlMs`, `onSemanticReduction`). |
 | `structuredOutput.mode` | `preserve \| summary \| off` | `preserve` | Protect complete JSON, opt into array summaries, or use legacy text trimming. |
 | `metrics.enabled` | `boolean` | `false` | Emit privacy-preserving per-result metrics; disabled by default. |
 
@@ -164,7 +164,7 @@ Oversized ordinary text may be spliced at the head and tail with a statistical n
 <cleanly preserved tail output starting at newline>
 ```
 
-When `spillover.enabled: true` is configured and storage succeeds, the banner provides the local path to the full raw text, allowing the agent or user to inspect details using `read` or `grep` without re-running long commands:
+When spillover is enabled (default) and storage succeeds, the banner provides the local path to the full raw text, allowing the agent or user to inspect details using `read` or `grep` without re-running long commands:
 
 ```text
 [... tool output trimmed: omitted 45,210 characters (~1,280 lines); full output saved to /tmp/dsh-trimmed/trimmed-bash-a8f2c9.log ...]
@@ -176,7 +176,7 @@ Complete raw JSON is recognized before ANSI stripping and semantic reducers, usi
 
 Text blocks are concatenated in order without inserting separators. Character budgets use UTF-16 code units; CRLF is preserved. Semantic reducers only process results containing exactly one text block. Spillover saves this projection before ANSI stripping or semantic reduction; images and other non-text blocks remain in the returned result.
 
-Storage is opt-in and may contain sensitive output. Files use `0600` and newly created directories use `0700` on POSIX; Windows access follows the parent directory ACL, so choose a private directory. Each write checks capacity under a non-waiting directory lock shared by cooperating processes. Cleanup only touches exact plugin filenames, scans at most 4096 entries plus one overflow check, and deletes at most 128 files per call. A busy lock, incomplete scan, exhausted budget or disk error skips spillover and retains the usual omission banner. Cleanup runs on subsequent writes or explicit pruning; TTL is not a timer that deletes idle files. An abrupt process exit can leave `.dsh-trimmer.lock`; remove it only after verifying no writer is active.
+Storage is enabled by default (can be disabled via `spillover.enabled: false`) and may contain sensitive output. Files use `0600` and newly created directories use `0700` on POSIX; Windows access follows the parent directory ACL, so choose a private directory. Each write checks capacity under a non-waiting directory lock shared by cooperating processes. Cleanup only touches exact plugin filenames, scans at most 4096 entries plus one overflow check, and deletes at most 128 files per call. A busy lock, incomplete scan, exhausted budget or disk error skips spillover and retains the usual omission banner. Cleanup runs on subsequent writes or explicit pruning; TTL is not a timer that deletes idle files. An abrupt process exit can leave `.dsh-trimmer.lock`; remove it only after verifying no writer is active.
 
 `onSemanticReduction: true` also saves semantic-only reductions and appends a separate recovery notice. Its default is `false`; short outputs and ANSI-only changes perform no disk I/O.
 

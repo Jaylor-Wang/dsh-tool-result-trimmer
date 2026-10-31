@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { trimToolContent, trimToolText, stripAnsi } from '../lib/trimmer.js';
 import { apply } from '../lib/index.js';
 
@@ -98,8 +101,15 @@ const shortCommandBlocks = [{ type: 'text', text: 'Command completed successfull
 await runPipelineBenchmark('Plugin short command (P3 disabled)', shortCommandBlocks, { semanticReducers: { build: false, lint: false } }, 20000, 'echo completed');
 await runPipelineBenchmark('Plugin short command (P3 enabled)', shortCommandBlocks, {}, 20000, 'echo completed');
 await runPipelineBenchmark('Plugin short command (metrics enabled)', shortCommandBlocks, { metrics: { enabled: true, onEvent() {} } }, 20000, 'echo completed');
-await runPipelineBenchmark('Plugin 162KB log (preserve)', massiveSingleBlock, {}, 1000);
-await runPipelineBenchmark('Plugin 162KB log (metrics enabled)', massiveSingleBlock, { metrics: { enabled: true, onEvent() {} } }, 1000);
+await runPipelineBenchmark('Plugin 162KB log (preserve)', massiveSingleBlock, { spillover: { enabled: false } }, 1000);
+await runPipelineBenchmark('Plugin 162KB log (metrics enabled)', massiveSingleBlock, { spillover: { enabled: false }, metrics: { enabled: true, onEvent() {} } }, 1000);
 await runPipelineBenchmark('Plugin JSON array (preserve)', jsonBlocks, {}, 1000);
-await runPipelineBenchmark('Plugin JSON array (summary)', jsonBlocks, { structuredOutput: { mode: 'summary' } }, 1000);
+await runPipelineBenchmark('Plugin JSON array (summary)', jsonBlocks, { spillover: { enabled: false }, structuredOutput: { mode: 'summary' } }, 1000);
+
+const benchSpillDir = path.join(os.tmpdir(), `dsh-bench-spill-${Date.now()}`);
+try {
+  await runPipelineBenchmark('Plugin 162KB log (spillover to disk)', massiveSingleBlock, { spillover: { enabled: true, directory: benchSpillDir } }, 20);
+} finally {
+  fs.rmSync(benchSpillDir, { recursive: true, force: true });
+}
 console.log('--- Benchmark completed successfully ---');

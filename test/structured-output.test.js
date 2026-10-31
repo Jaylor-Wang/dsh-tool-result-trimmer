@@ -15,7 +15,11 @@ after(() => {
 async function run(content, config = {}, exec = { name: 'bash' }, result = {}) {
   let handler;
   apply({ on(_event, fn) { handler = fn; } }, {
-    thresholdChars: 500, headChars: 100, tailChars: 100, ...config
+    thresholdChars: 500,
+    headChars: 100,
+    tailChars: 100,
+    ...config,
+    spillover: { directory: root, ...(config.spillover ?? {}) }
   });
   const res = { content, ...result };
   const decision = await handler(exec, res, async () => ({ kind: 'accept' }));
@@ -43,6 +47,15 @@ describe('P2 structured output', () => {
     assert.deepEqual(summary.head[0], array[0]);
     assert.deepEqual(summary.tail.at(-1), array.at(-1));
     assert.ok(output[0].text.length < raw.length);
+    assert.ok(typeof summary.spilloverPath === 'string' && summary.spilloverPath.length > 0);
+  });
+
+  it('sets spilloverPath to null when spillover is explicitly disabled', async () => {
+    const output = await run([{ type: 'text', text: raw }], {
+      structuredOutput: { mode: 'summary' },
+      spillover: { enabled: false }
+    });
+    const summary = JSON.parse(output[0].text);
     assert.equal(summary.spilloverPath, null);
   });
 

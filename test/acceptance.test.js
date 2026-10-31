@@ -267,6 +267,8 @@ describe('P0/P1 acceptance regressions', () => {
       assert.equal(Config.type, 'object');
       assert.equal(Config({ spillover: { directory: null } }).spillover.directory ?? null, null);
       assert.equal(Config({ spillover: { directory: 'custom' } }).spillover.directory, 'custom');
+      assert.equal(Config({}).spillover.enabled, true);
+      assert.equal(Config({ spillover: { enabled: false } }).spillover.enabled, false);
       assert.equal(Config({ spillover: { enabled: true } }).spillover.maxFiles, 1000);
       assert.equal(Config({}).metrics.enabled, false);
       assert.equal(Config({ metrics: { enabled: true } }).metrics.enabled, true);

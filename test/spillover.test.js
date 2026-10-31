@@ -14,6 +14,13 @@ import {
 import { apply } from '../lib/index.js';
 import { trimToolText, trimToolContent, formatBanner } from '../lib/trimmer.js';
 
+const defaultSpillRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-test-default-spill-'));
+after(() => {
+  assert.equal(path.dirname(defaultSpillRoot), path.resolve(os.tmpdir()));
+  assert.ok(path.basename(defaultSpillRoot).startsWith('dsh-test-default-spill-'));
+  fs.rmSync(defaultSpillRoot, { recursive: true, force: true });
+});
+
 describe('Spillover unit tests', () => {
   const testDir = path.join(os.tmpdir(), `dsh-test-spillover-${Date.now()}`);
 
@@ -30,6 +37,15 @@ describe('Spillover unit tests', () => {
   it('should return null when spillover is disabled', () => {
     const res = writeSpillover('some large text', { enabled: false });
     assert.equal(res, null);
+  });
+
+  it('should be enabled by default in DEFAULT_SPILLOVER_CONFIG and writeSpillover', () => {
+    assert.equal(DEFAULT_SPILLOVER_CONFIG.enabled, true);
+    const rawContent = 'Line 1: test\n'.repeat(20);
+    const saved = writeSpillover(rawContent, { directory: testDir });
+    assert.ok(saved);
+    assert.ok(fs.existsSync(saved));
+    assert.equal(fs.readFileSync(saved, 'utf8'), rawContent);
   });
 
   it('should return null when text is empty', () => {
@@ -199,6 +215,56 @@ describe('Spillover integration with Plugin pipeline', () => {
     const savedFile = match[1];
     assert.ok(fs.existsSync(savedFile));
     assert.equal(fs.readFileSync(savedFile, 'utf8'), longText);
+  });
+
+  it('should enable spillover by default when no configuration is provided', async () => {
+    const originalTmpdir = os.tmpdir;
+    os.tmpdir = () => defaultSpillRoot;
+    try {
+      const ctx = createMockCtx();
+      apply(ctx);
+
+      const handler = ctx.listeners[0].handler;
+      const longText = 'Error diagnostic trace line...\n'.repeat(1000);
+      const result = { content: [{ type: 'text', text: longText }] };
+      const decision = await handler({ name: 'bash', callId: 'call-default-spill' }, result, async () => ({ kind: 'accept' }));
+      const trimmedText = decision.content[0].text;
+      const match = trimmedText.match(/full output saved to ([^ \]]+)/);
+
+      assert.equal(decision.kind, 'accept');
+      assert.ok(match, 'Default behavior must include saved spillover file path');
+      assert.equal(path.dirname(match[1]), path.join(defaultSpillRoot, 'dsh-trimmed'));
+      assert.equal(fs.readFileSync(match[1], 'utf8'), longText);
+    } finally {
+      os.tmpdir = originalTmpdir;
+    }
+  });
+
+  it('should enable spillover by default when only partial spillover config is provided', async () => {
+    const ctx = createMockCtx();
+    apply(ctx, {
+      thresholdChars: 1000,
+      headChars: 200,
+      tailChars: 300,
+      spillover: { directory: pluginSpillDir }
+    });
+
+    const handler = ctx.listeners[0].handler;
+    const longText = 'Error diagnostic trace line...\n'.repeat(100);
+    const exec = { name: 'bash', callId: 'call-default-spill', arguments: { command: 'cargo build' } };
+    const result = { content: [{ type: 'text', text: longText }] };
+
+    const decision = await handler(exec, result, async () => ({ kind: 'accept' }));
+    assert.equal(decision.kind, 'accept');
+    assert.ok(decision.content);
+    const trimmedText = decision.content[0].text;
+    assert.ok(trimmedText.includes('full output saved to'));
+
+    const match = trimmedText.match(/full output saved to ([^ \]]+)/);
+    assert.ok(match, 'Default behavior must include saved spillover file path');
+    assert.ok(fs.existsSync(match[1]));
+    assert.equal(fs.readFileSync(match[1], 'utf8'), longText);
+    try { fs.unlinkSync(match[1]); } catch {}
   });
 
   it('should NOT write spillover file if output only undergoes ANSI stripping within threshold', async () => {

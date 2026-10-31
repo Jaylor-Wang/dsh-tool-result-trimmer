@@ -30,7 +30,7 @@
 4. **结构化 JSON 保护（Structured Output Protection）**：
    默认完整保留合法 JSON（`mode: preserve`），即便超出字符阈值也绝不暴力破坏语法结构；可选 `mode: summary` 安全采样超大顶层数组并生成合法的带标记 JSON 摘要；亦支持 `mode: off` 恢复旧版普通截断。
 5. **受控可追溯持久化（Controlled Spillover）**：
-   支持在裁剪发生时将完整原文原子写入本地磁盘（`spillover.enabled: true`），并在截断提示中回显恢复路径，方便 Agent 或开发者直接查看原文而无需重跑耗时任务；具备容量上限、文件数预算、TTL 过期清理及跨进程目录锁保护。
+   默认在裁剪发生时将完整原文原子写入本地磁盘（`spillover.enabled: true`），并在截断提示中回显恢复路径，方便 Agent 或开发者直接查看原文而无需重跑耗时任务；具备容量上限、文件数预算、TTL 过期清理及跨进程目录锁保护。
 6. **行吸附算法（Line-Aware Snapping · 绝不截断代码行）**：
    优先吸附附近的换行符（`\n`），必要时回退到字符边界，并严格避免拆开 UTF-16 代理对。
 7. **终端 ANSI 控制字符自动剥离（Clean Terminal Output）**：
@@ -94,7 +94,7 @@ pnpm add dsh-tool-result-trimmer
     metrics:
       enabled: false          # 显式启用计数，通过 Cordis logger 输出
     spillover:                # 受控的截断内容本地落盘（Spillover）备份
-      enabled: false          # 是否在发生机械裁剪时将完整原文落盘（默认 false）
+      enabled: true           # 是否在发生机械裁剪时将完整原文落盘（默认 true）
       directory: null         # 存储目录（null 默认使用系统临时目录下的 dsh-trimmed）
       maxFileBytes: 20000000  # 单个备份文件最大字节数（约 20MB）
       maxTotalBytes: 200000000 # 备份目录总容量预算（约 200MB）
@@ -115,7 +115,7 @@ pnpm add dsh-tool-result-trimmer
 | `excludeTools` | `string[]` | `['read', 'read_image']` | 免于裁剪与清洗的工具列表。 |
 | `overrides` | `Record<string, ToolOverride>` | `{}` | 分工具差异化配置字典。支持单独设置特定工具的 `thresholdChars`、`headChars`、`tailChars`、`stripAnsi`，或设置 `enabled: false` 彻底跳过该工具。 |
 | `semanticReducers` | `object` | `{ enabled: true, ... }` | 命令感知语义压缩器配置。包含 `enabled`、`git`、`packageManager`、`test`、`build`、`lint` 开关，可单独按需控制。 |
-| `spillover` | `object` | `{ enabled: false, ... }` | 受控的截断日志本地落盘设置（`enabled`、`directory`、`maxFileBytes`、`maxTotalBytes`、`maxFiles`、`ttlMs`、`onSemanticReduction`）。 |
+| `spillover` | `object` | `{ enabled: true, ... }` | 受控的截断日志本地落盘设置（`enabled`、`directory`、`maxFileBytes`、`maxTotalBytes`、`maxFiles`、`ttlMs`、`onSemanticReduction`）。 |
 | `structuredOutput.mode` | `preserve \| summary \| off` | `preserve` | 保护完整 JSON、显式启用数组摘要，或使用旧版文本裁剪。 |
 | `metrics.enabled` | `boolean` | `false` | 输出不含原文的逐结果统计；默认关闭。 |
 
@@ -164,7 +164,7 @@ pnpm add dsh-tool-result-trimmer
 <从换行开始的完整错误堆栈与退出码>
 ```
 
-启用 `spillover.enabled: true` 且保存成功时，横幅中会提供完整原始文本的本地路径。模型或开发者无需重新运行长耗时命令，即可使用 `read` 或 `grep` 检索日志：
+在落盘启用（默认启用）且保存成功时，横幅中会提供完整原始文本的本地路径。模型或开发者无需重新运行长耗时命令，即可使用 `read` 或 `grep` 检索日志：
 
 ```text
 [... tool output trimmed: omitted 45,210 characters (~1,280 lines); full output saved to /tmp/dsh-trimmed/trimmed-bash-a8f2c9.log ...]
@@ -176,7 +176,7 @@ pnpm add dsh-tool-result-trimmer
 
 多个文本 block 按原顺序直接拼接，不额外插入分隔符。字符预算按 UTF-16 代码单元计算，保留 CRLF。语义压缩仅处理恰好包含一个文本 block 的结果。落盘保存 ANSI 清理和语义压缩之前的上述文本投影；图片等非文本 block 保留在返回结果中。
 
-落盘需要显式开启，文件可能包含敏感输出。POSIX 文件权限为 `0600`，新建目录为 `0700`；Windows 权限遵循父目录 ACL，请选择私有目录。每次写入前在跨进程共享的目录锁内检查容量，锁被占用时立即降级。清理只处理完整匹配插件文件名的文件，每次最多扫描 4096 个条目并额外检查一次是否溢出，最多删除 128 个文件。目录过大、容量不足、锁被占用或磁盘错误时跳过落盘，仍返回普通截断横幅。清理由后续写入或显式调用触发，TTL 不会在空闲时定时删除文件。进程异常退出可能留下 `.dsh-trimmer.lock`，确认没有写入进程后再移除。
+落盘功能默认开启（可配置 `spillover.enabled: false` 关闭），文件可能包含敏感输出。POSIX 文件权限为 `0600`，新建目录为 `0700`；Windows 权限遵循父目录 ACL，请选择私有目录。每次写入前在跨进程共享的目录锁内检查容量，锁被占用时立即降级。清理只处理完整匹配插件文件名的文件，每次最多扫描 4096 个条目并额外检查一次是否溢出，最多删除 128 个文件。目录过大、容量不足、锁被占用或磁盘错误时跳过落盘，仍返回普通截断横幅。清理由后续写入或显式调用触发，TTL 不会在空闲时定时删除文件。进程异常退出可能留下 `.dsh-trimmer.lock`，确认没有写入进程后再移除。
 
 显式设置 `onSemanticReduction: true` 后，仅语义压缩也会保存原文，并追加独立的恢复提示；默认值为 `false`。短输出和仅 ANSI 清理不执行磁盘 I/O。
 

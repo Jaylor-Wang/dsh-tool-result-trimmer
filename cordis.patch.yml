@@ -10,3 +10,5 @@
         excludeTools:
           - read
           - read_image
+        spillover:
+          enabled: true
