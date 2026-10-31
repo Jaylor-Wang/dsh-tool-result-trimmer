@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-result-trimmer",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "description": "Eager, tail-heavy, line-aware tool result trimmer plugin for DeepSeek Harness (dsh) and Cordis.",
   "type": "module",
   "main": "index.js",
@@ -17,7 +17,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js test/benchmark.js",
-    "benchmark": "node test/benchmark.js"
+    "benchmark": "node test/benchmark.js",
+    "typecheck": "node scripts/typecheck.js"
   },
   "author": "Jaylor-Wang",
   "license": "MIT",
@@ -41,6 +42,8 @@
   "files": [
     "index.js",
     "index.d.ts",
+    "tsconfig.json",
+    "scripts/typecheck.js",
     "cordis.patch.yml",
     "locale/*.json",
     "lib",

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Tool Result Trimmer",
-    "description": "Eager tool output trimmer hooked into post-execute pipeline: trims oversized terminal and error outputs before logging, preserving critical head and tail diagnostics."
+    "description": "Tool output trimmer for the post-execute pipeline, with structured output protection and optional privacy-conscious metrics."
   }
 }

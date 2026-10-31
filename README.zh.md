@@ -26,8 +26,9 @@
    - **Git Reducer**：干净工作区一键收敛为单行，脏工作区自动剥离 `(use "git add...")` 样板提示，100% 完整保留修改文件列表；剥离 `git diff` 无效的 `index` 哈希行。
    - **Package Manager Reducer**：自动过滤 `npm`/`pnpm`/`yarn`/`pip` 进度条、peer deprecation 杂讯、funding 提示与升级提醒，完整保留安装包统计与漏洞审计。
    - **Test Reducer**：当且仅当测试全量通过时（`node --test`, `vitest`, `pytest`, `cargo test` 等），将数百行冗长打勾日志折叠为单行摘要；一旦有任何用例失败，**绝不压缩，完整保留所有报错堆栈与断言现场**。
+   - **Build 与 Lint Reducer**：仅在明确成功时保守压缩可识别的不含路径的 Vite/Cargo/webpack 进度或重复 Prettier 检查提示，保留 warning、error、路径及未知输出。
 4. **行吸附算法（Line-Aware Snapping · 绝不截断代码行）**：
-   不按死板字符索引生硬切割，而是动态吸附到最近的换行符（`\n`）。保证头部在完整行末尾结束，尾部从新行行首开始，彻底杜绝半截单词、JSON/XML 语法破碎与 UTF-8 字符损坏。
+   优先吸附附近的换行符（`\n`），必要时回退到字符边界，并避免拆开 UTF-16 代理对。完整 JSON 默认由独立的结构化保护处理。
 5. **终端 ANSI 控制字符自动剥离（Clean Terminal Output）**：
    自动识别并清洗终端 ANSI 颜色转义码（`\x1b[31m` 等）、光标移动/清行控制序列（`\x1b[2K`、`\x1b[1G`）及窗口标题序列，杜绝无意义杂质字符浪费 Token，大幅提升模型对编译报错与日志信息的解析精度。
 6. **零副作用安全保护**：
@@ -82,6 +83,20 @@ pnpm add dsh-tool-result-trimmer
       git: true               # Git 状态与差异提纯
       packageManager: true    # npm / pnpm / yarn / pip 冗余过滤
       test: true              # 测试全通折叠与严格 Fail-Open
+      build: true             # 已识别的成功构建进度
+      lint: true              # 已识别的成功格式检查进度
+    structuredOutput:
+      mode: preserve          # preserve（默认）、summary 或 off
+    metrics:
+      enabled: false          # 显式启用计数，通过 Cordis logger 输出
+    spillover:                # 受控的截断内容本地落盘（Spillover）备份
+      enabled: false          # 是否在发生机械裁剪时将完整原文落盘（默认 false）
+      directory: null         # 存储目录（null 默认使用系统临时目录下的 dsh-trimmed）
+      maxFileBytes: 20000000  # 单个备份文件最大字节数（约 20MB）
+      maxTotalBytes: 200000000 # 备份目录总容量预算（约 200MB）
+      maxFiles: 1000          # 备份文件最大数量上限（1000 个）
+      ttlMs: 604800000        # 日志过期清理时间（7 天）
+      onSemanticReduction: false # 仅语义压缩时也保存原文并提供恢复路径
 ```
 
 ### 配置项说明
@@ -95,7 +110,18 @@ pnpm add dsh-tool-result-trimmer
 | `tailChars` | `number` | `5000` | 全局尾部保留字符预算（优先保留错误堆栈与退出状态）。 |
 | `excludeTools` | `string[]` | `['read', 'read_image']` | 免于裁剪与清洗的工具列表。 |
 | `overrides` | `Record<string, ToolOverride>` | `{}` | 分工具差异化配置字典。支持单独设置特定工具的 `thresholdChars`、`headChars`、`tailChars`、`stripAnsi`，或设置 `enabled: false` 彻底跳过该工具。 |
-| `semanticReducers` | `object` | `{ enabled: true, ... }` | 命令感知语义压缩器配置。包含 `enabled`、`git`、`packageManager`、`test` 开关，可单独按需控制。 |
+| `semanticReducers` | `object` | `{ enabled: true, ... }` | 命令感知语义压缩器配置。包含 `enabled`、`git`、`packageManager`、`test`、`build`、`lint` 开关，可单独按需控制。 |
+| `spillover` | `object` | `{ enabled: false, ... }` | 受控的截断日志本地落盘设置（`enabled`、`directory`、`maxFileBytes`、`maxTotalBytes`、`maxFiles`、`ttlMs`、`onSemanticReduction`）。 |
+| `structuredOutput.mode` | `preserve \| summary \| off` | `preserve` | 保护完整 JSON、显式启用数组摘要，或使用旧版文本裁剪。 |
+| `metrics.enabled` | `boolean` | `false` | 输出不含原文的逐结果统计；默认关闭。 |
+
+---
+
+## 统计
+
+显式启用后，每个已接受且未排除的文本结果向 Cordis logger 输出一条事件。程序调用者也可提供 `metrics.onEvent` 回调替代日志；回调抛错或异步拒绝不会影响工具结果。拦截、排除和旁路的结果不产生事件；没有 logger 和回调时不会输出。
+
+事件仅包含白名单内的内置 reducer 名称（未知名称记为 null）、输入/输出文本的 UTF-16 长度、语义/结构化/机械处理标记、机械省略字符数与换行数，以及落盘/清理状态和删除数量。输出长度包含已经返回给调用者的提示及路径长度，但统计不包含其文本。清理状态 `complete` 表示有界扫描与准入完成且没有删除失败，并不保证所有过期文件均已删除。长度与数量仍可能泄露输出规模，请仅在接受此类元数据的环境中启用。不进行 token 估算。
 
 ---
 
@@ -124,7 +150,7 @@ pnpm add dsh-tool-result-trimmer
 
 ## 模型视角呈现
 
-当工具输出超出 `thresholdChars` 时，修剪器将优雅拼接首尾，并插入包含统计信息的清晰横幅：
+普通文本超出 `thresholdChars` 后可能被首尾拼接，并插入统计横幅：
 
 ```text
 <完整的一行行头部启动日志>
@@ -134,7 +160,27 @@ pnpm add dsh-tool-result-trimmer
 <从换行开始的完整错误堆栈与退出码>
 ```
 
+启用 `spillover.enabled: true` 且保存成功时，横幅中会提供完整原始文本的本地路径。模型或开发者无需重新运行长耗时命令，即可使用 `read` 或 `grep` 检索日志：
+
+```text
+[... tool output trimmed: omitted 45,210 characters (~1,280 lines); full output saved to /tmp/dsh-trimmed/trimmed-bash-a8f2c9.log ...]
+```
+
+语义压缩只识别简单的直接命令及已知的 `npx`、`npm exec`、`pnpm exec`、`yarn exec` 包装，包括 `.cmd` 和 `.exe`；明确消费 `--filter`、`--prefix`、`--package` 等已知选项值，未知包装选项和 shell-call 模式原样放行。包管理器过滤仅应用于明确的包操作，子工具和脚本别名不能绕过自身 reducer 开关。Git 干净状态摘要保留退出标记，遇未知输出保留原文；测试摘要要求通过数一致，且无取消或失败证据；进度过滤保留诊断、未知 spinner 输出及 POSIX/Windows 路径。不推断 shell 命令链、带引号命令或包脚本别名。webpack 仅在 `--progress`、明确编译成功且出现严格匹配的无路径进度行时压缩；已通过 Webpack 5.112.2 真实输出样例验证。TypeScript、ESLint、Ruff 和 Biome 经实测成功时输出极小或为空，无需成功态压缩；其任何诊断、错误及非零退出状态均逐字节完整保留。语义 Fail-Open 不会关闭普通机械裁剪；需要完整输出时使用旁路标记。
+
+结构化保护在 ANSI 清理和语义压缩之前识别原始文本投影中的完整 JSON。默认 `preserve` 原样保留，即使超出阈值也可能占用较大上下文。`summary` 仅将超阈值、单文本 block 的顶层数组替换为带标记的 JSON 对象，包含 `totalItems`、受预算限制的 `head` 和 `tail` 样本，以及 `spilloverPath`（不可用时为 null）。在执行失败或状态不确定时严格原样保留完整 JSON；当样本无法放入预算、摘要不能节省空间或数值重序列化可能丢失精度（包括小数和指数形式）时同样保留原文。对象、标量及多文本 block JSON 均保留原文。摘要样本可能包含敏感数据；启用落盘时会保存完整原始文本。`off` 恢复旧版处理。非法 JSON、带额外日志或 ANSI 包装的 JSON 按普通文本处理。
+
+多个文本 block 按原顺序直接拼接，不额外插入分隔符。字符预算按 UTF-16 代码单元计算，保留 CRLF。语义压缩仅处理恰好包含一个文本 block 的结果。落盘保存 ANSI 清理和语义压缩之前的上述文本投影；图片等非文本 block 保留在返回结果中。
+
+落盘需要显式开启，文件可能包含敏感输出。POSIX 文件权限为 `0600`，新建目录为 `0700`；Windows 权限遵循父目录 ACL，请选择私有目录。每次写入前在跨进程共享的目录锁内检查容量，锁被占用时立即降级。清理只处理完整匹配插件文件名的文件，每次最多扫描 4096 个条目并额外检查一次是否溢出，最多删除 128 个文件。目录过大、容量不足、锁被占用或磁盘错误时跳过落盘，仍返回普通截断横幅。清理由后续写入或显式调用触发，TTL 不会在空闲时定时删除文件。进程异常退出可能留下 `.dsh-trimmer.lock`，确认没有写入进程后再移除。
+
+显式设置 `onSemanticReduction: true` 后，仅语义压缩也会保存原文，并追加独立的恢复提示；默认值为 `false`。短输出和仅 ANSI 清理不执行磁盘 I/O。
+
 ---
+
+## 验证
+
+使用 `npm test` 和 `npm run benchmark` 验证行为与性能。`npm run typecheck` 使用已有 TypeScript 编译器和真实的可选 Cordis peer 检查公开声明；宿主提供的两者可通过 `NODE_PATH` 解析。缺失依赖会明确失败，不安装依赖、不伪造声明。项目配置不含本机绝对路径，仅检查公开声明；JavaScript 另行通过文件级诊断与行为测试验证。
 
 ## 开源协议
 

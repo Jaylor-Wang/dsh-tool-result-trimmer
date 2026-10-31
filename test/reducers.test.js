@@ -1,11 +1,94 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  isExecutionFailure,
   reduceGit,
   reducePackageManager,
   reduceTestOutput,
   applySemanticReducers
 } from '../lib/reducers/index.js';
+
+describe('isExecutionFailure', () => {
+  it('should return false for successful or empty result', () => {
+    assert.equal(isExecutionFailure(undefined), false);
+    assert.equal(isExecutionFailure(null), false);
+    assert.equal(isExecutionFailure({}), false);
+    assert.equal(isExecutionFailure({ isError: false }), false);
+    assert.equal(isExecutionFailure({ exitCode: 0 }), false);
+    assert.equal(isExecutionFailure({ status: 0 }), false);
+    assert.equal(isExecutionFailure({ code: 0 }), false);
+    assert.equal(isExecutionFailure({ status: 'ok' }), false);
+    assert.equal(isExecutionFailure({ status: 'success' }), false);
+  });
+
+  it('should detect explicit isError: true', () => {
+    assert.equal(isExecutionFailure({ isError: true }), true);
+  });
+
+  it('should detect non-zero exitCode, status, or code', () => {
+    assert.equal(isExecutionFailure({ exitCode: 1 }), true);
+    assert.equal(isExecutionFailure({ exitCode: 127 }), true);
+    assert.equal(isExecutionFailure({ status: 2 }), true);
+    assert.equal(isExecutionFailure({ code: -1 }), true);
+  });
+
+  it('should detect failure string status', () => {
+    assert.equal(isExecutionFailure({ status: 'error' }), true);
+    assert.equal(isExecutionFailure({ status: 'FAILED' }), true);
+    assert.equal(isExecutionFailure({ status: 'failure' }), true);
+  });
+
+  it('should inspect canonical DSH foreground outcomes and termination', () => {
+    const foreground = { kind: 'foreground', exitCode: 0, signal: null, timedOut: false, aborted: false };
+    assert.equal(isExecutionFailure({ isError: false, value: foreground }), false);
+    for (const extra of [{ exitCode: 2 }, { exitCode: null }, { signal: 'SIGTERM' }, { timedOut: true }, { aborted: true }, { stopped: 'cancelled' }, { sandbox: { denied: true } }, { sandbox: { runnerFailed: true } }]) {
+      assert.equal(isExecutionFailure({ isError: false, value: { ...foreground, ...extra } }), true);
+    }
+    assert.equal(isExecutionFailure({ timedOut: true }), true);
+    assert.equal(isExecutionFailure({ signal: 'SIGKILL' }), true);
+    assert.equal(isExecutionFailure({ failed: true }), true);
+    assert.equal(isExecutionFailure({ sandbox: { runnerFailed: true } }), true);
+    assert.equal(isExecutionFailure({ value: { kind: 'promoted', output: 'partial' } }), true);
+    assert.equal(isExecutionFailure({ status: 'cancelled' }), true);
+    assert.equal(isExecutionFailure({ status: 'unknown' }), true);
+    assert.equal(isExecutionFailure({ value: { example: 'application data' } }), false);
+  });
+
+  it('should protect explicit DSH text status markers without broad keyword matching', () => {
+    for (const marker of [
+      '[exit code: 2]',
+      '[exit code: -1]',
+      '[exit code: null]',
+      '[killed by signal: SIGTERM]',
+      '[timed out after 1000ms]',
+      '[stopped: user]',
+      '[still running after 1000ms; moved to background job bash-1]',
+      '[sandbox: the sandbox runner itself failed under workspace-write mode — the command did not run; this is a sandbox problem, not a command failure]'
+    ]) {
+      assert.equal(isExecutionFailure({ isError: false }, `successful-looking output\n${marker}`), true);
+    }
+    assert.equal(isExecutionFailure(undefined, 'ok\n[exit code: 1]'), true);
+    assert.equal(isExecutionFailure({}, 'ok\n[exit code: 0]'), false);
+    assert.equal(isExecutionFailure({}, 'Example: [exit code: 1] is a failure marker'), false);
+    assert.equal(isExecutionFailure({}, 'Tests check error handling and failed requests'), false);
+  });
+
+  it('should preserve diagnostics when a failed command contains success-looking output', () => {
+    const exec = { arguments: { command: 'git status; exit 2' } };
+    const raw = 'On branch main\nnothing to commit, working tree clean\n[stderr]\nvalidation failed\n[exit code: 2]';
+    const outcome = applySemanticReducers(exec, raw, { isError: false, value: { kind: 'foreground', exitCode: 2 } });
+    assert.equal(outcome.reduced, false);
+    assert.equal(outcome.text, raw);
+  });
+
+  it('should fail-open if inspecting result throws', () => {
+    const dangerousResult = {};
+    Object.defineProperty(dangerousResult, 'isError', {
+      get() { throw new Error('getter error'); }
+    });
+    assert.equal(isExecutionFailure(dangerousResult), true);
+  });
+});
 
 describe('reduceGit', () => {
   it('should condense clean git status to a single line', () => {
@@ -67,6 +150,12 @@ index a1b2c3d..e4f5g6h 100644
     const res = reduceGit({ arguments: { command: 'git status' } }, raw, { isError: true });
     assert.equal(res, null);
   });
+
+  it('should fail-open if command returned non-zero exit code or status', () => {
+    const raw = 'fatal: not a git repository';
+    assert.equal(reduceGit({ arguments: { command: 'git status' } }, raw, { exitCode: 128 }), null);
+    assert.equal(reduceGit({ arguments: { command: 'git status' } }, raw, { status: 1 }), null);
+  });
 });
 
 describe('reducePackageManager', () => {
@@ -99,10 +188,27 @@ describe('reducePackageManager', () => {
     assert.equal(res, null);
   });
 
+  it('should fail-open on non-zero exit code for package manager', () => {
+    const raw = 'npm notice something\nadded 1 package';
+    assert.equal(reducePackageManager({ arguments: { command: 'npm install' } }, raw, { exitCode: 1 }), null);
+  });
+
   it('should fail-open on non-package-manager commands', () => {
     const raw = 'added 1 item';
     const res = reducePackageManager({ arguments: { command: 'echo added 1 item' } }, raw);
     assert.equal(res, null);
+  });
+
+  it('should preserve diagnostic and path-like lines even if prefixed with Braille spinner', () => {
+    const rawWithWarning = '⠋ warning: src/file.ts:42:3 diagnostic found\nadded 1 package\n';
+    // When no other noise exists, reduction safely yields null (fail-open)
+    assert.equal(reducePackageManager({ arguments: { command: 'npm install' } }, rawWithWarning), null);
+
+    const rawWithNoiseAndWarning = '[====================] 100%\n⠋ fetching packages...\n⠋ warning: src/file.ts:42:3 diagnostic found\nadded 1 package\n';
+    const res = reducePackageManager({ arguments: { command: 'npm install' } }, rawWithNoiseAndWarning);
+    assert.ok(res);
+    assert.ok(res.includes('warning: src/file.ts:42:3 diagnostic found'));
+    assert.ok(!res.includes('fetching packages'));
   });
 });
 
@@ -169,6 +275,11 @@ test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
     const res = reduceTestOutput({ arguments: { command: 'node --test' } }, raw, { isError: true });
     assert.equal(res, null); // FAIL-OPEN: preserve all error stacks
   });
+
+  it('should fail-open when test runner exits with non-zero exit code', () => {
+    const raw = 'ℹ tests 2\nℹ pass 2\nℹ fail 0';
+    assert.equal(reduceTestOutput({ arguments: { command: 'node --test' } }, raw, { exitCode: 1 }), null);
+  });
 });
 
 describe('applySemanticReducers pipeline', () => {
@@ -193,5 +304,24 @@ describe('applySemanticReducers pipeline', () => {
       { semanticReducers: { git: false } }
     );
     assert.equal(res.reduced, false);
+  });
+
+  it('should be idempotent when running reducers on already-reduced output', () => {
+    const raw = 'On branch main\nYour branch is up to date with origin/main.\n\nnothing to commit, working tree clean';
+    const first = applySemanticReducers({ arguments: { command: 'git status' } }, raw);
+    assert.equal(first.reduced, true);
+    assert.equal(first.text, 'On branch main: working tree clean');
+
+    // Running second time on the already reduced text
+    const second = applySemanticReducers({ arguments: { command: 'git status' } }, first.text);
+    // Already clean, doesn't match raw multiline pattern, safely yields/returns unchanged
+    assert.equal(second.reduced, false);
+    assert.equal(second.text, first.text);
+  });
+
+  it('should handle CRLF and unicode content gracefully in reducers', () => {
+    const rawCrlf = 'On branch main\r\nYour branch is up to date with origin/main.\r\n\r\nnothing to commit, working tree clean\r\n';
+    const res = reduceGit({ arguments: { command: 'git status' } }, rawCrlf);
+    assert.equal(res, 'On branch main: working tree clean');
   });
 });

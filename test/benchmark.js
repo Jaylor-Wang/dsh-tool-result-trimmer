@@ -1,4 +1,5 @@
 import { trimToolContent, trimToolText, stripAnsi } from '../lib/trimmer.js';
+import { apply } from '../lib/index.js';
 
 function runBenchmark(name, fn, iterations = 1000) {
   // Warmup
@@ -78,4 +79,27 @@ runBenchmark('Oversized 60KB ANSI-heavy trim', () => {
   trimToolContent(massiveAnsiBlock, { thresholdChars: 10000, headChars: 1500, tailChars: 5000, stripAnsi: true });
 }, 1000);
 
+async function runPipelineBenchmark(name, content, config, iterations, command) {
+  let handler;
+  apply({ on(_event, fn) { handler = fn; } }, config);
+  const exec = { name: 'benchmark', arguments: command ? { command } : undefined };
+  const result = { content };
+  const next = async () => ({ kind: 'accept' });
+  for (let i = 0; i < 100; i++) await handler(exec, result, next);
+  const start = performance.now();
+  for (let i = 0; i < iterations; i++) await handler(exec, result, next);
+  const elapsed = performance.now() - start;
+  console.log(`[Benchmark] ${name.padEnd(45)}: ${(elapsed / iterations).toFixed(4)} ms/op (${Math.round(iterations / elapsed * 1000).toLocaleString()} ops/sec)`);
+}
+
+const jsonBlocks = [{ type: 'text', text: JSON.stringify(Array.from({ length: 2000 }, (_, i) => ({ i, value: 'sample'.repeat(8) }))) }];
+await runPipelineBenchmark('Plugin short text (preserve)', shortCleanBlocks, {}, 20000);
+const shortCommandBlocks = [{ type: 'text', text: 'Command completed successfully.' }];
+await runPipelineBenchmark('Plugin short command (P3 disabled)', shortCommandBlocks, { semanticReducers: { build: false, lint: false } }, 20000, 'echo completed');
+await runPipelineBenchmark('Plugin short command (P3 enabled)', shortCommandBlocks, {}, 20000, 'echo completed');
+await runPipelineBenchmark('Plugin short command (metrics enabled)', shortCommandBlocks, { metrics: { enabled: true, onEvent() {} } }, 20000, 'echo completed');
+await runPipelineBenchmark('Plugin 162KB log (preserve)', massiveSingleBlock, {}, 1000);
+await runPipelineBenchmark('Plugin 162KB log (metrics enabled)', massiveSingleBlock, { metrics: { enabled: true, onEvent() {} } }, 1000);
+await runPipelineBenchmark('Plugin JSON array (preserve)', jsonBlocks, {}, 1000);
+await runPipelineBenchmark('Plugin JSON array (summary)', jsonBlocks, { structuredOutput: { mode: 'summary' } }, 1000);
 console.log('--- Benchmark completed successfully ---');

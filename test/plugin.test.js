@@ -319,4 +319,72 @@ describe('tool-result-trimmer plugin', () => {
     // Semantic reducer yields (fail-open); under threshold so content is not modified
     assert.equal(decision.content, undefined);
   });
+
+  it('should fail-open when command result has non-zero exitCode or status', async () => {
+    const ctx = createMockCtx();
+    apply(ctx, { thresholdChars: 10000 });
+
+    const handler = ctx.listeners[0].handler;
+    const exec = { name: 'bash', callId: 'call-test-exitcode', arguments: { command: 'node --test' } };
+    const rawFail = '✖ failing test\nℹ fail 1';
+    const result = { content: [{ type: 'text', text: rawFail }], exitCode: 1 };
+
+    const decision = await handler(exec, result, async () => ({ kind: 'accept' }));
+    assert.equal(decision.kind, 'accept');
+    assert.equal(decision.content, undefined); // Untouched
+  });
+
+  it('should preserve multi-text blocks and intervening non-text blocks without dropping data (P0 Gate)', async () => {
+    const ctx = createMockCtx();
+    apply(ctx, { thresholdChars: 10000 });
+
+    const handler = ctx.listeners[0].handler;
+    const exec = { name: 'bash', callId: 'call-multi-1', arguments: { command: 'git status' } };
+
+    const block1 = { type: 'text', text: 'Step 1: Preparing repository...\n' };
+    const block2 = { type: 'image', data: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...' };
+    const block3 = { type: 'text', text: 'Step 2: On branch main\nnothing to commit, working tree clean\n' };
+
+    const result = {
+      content: [block1, block2, block3],
+      isError: false
+    };
+
+    const decision = await handler(exec, result, async () => ({ kind: 'accept' }));
+
+    assert.equal(decision.kind, 'accept');
+    // Multi-text blocks safely bypass semantic reduction so block3 is NOT dropped!
+    // Since total length < threshold, decision.content is untouched (or fully preserved)
+    const finalContent = decision.content ?? result.content;
+    assert.equal(finalContent.length, 3);
+    assert.equal(finalContent[0].text, block1.text);
+    assert.equal(finalContent[1], block2);
+    assert.equal(finalContent[2].text, block3.text);
+  });
+
+  it('should preserve non-text block when single text block is semantically reduced', async () => {
+    const ctx = createMockCtx();
+    apply(ctx, { thresholdChars: 10000 });
+
+    const handler = ctx.listeners[0].handler;
+    const exec = { name: 'bash', callId: 'call-mixed-1', arguments: { command: 'git status' } };
+
+    const textBlock = {
+      type: 'text',
+      text: 'On branch main\nYour branch is up to date with \'origin/main\'.\n\nnothing to commit, working tree clean'
+    };
+    const imageBlock = { type: 'image', data: 'base64...' };
+
+    const result = {
+      content: [imageBlock, textBlock],
+      isError: false
+    };
+
+    const decision = await handler(exec, result, async () => ({ kind: 'accept' }));
+    assert.equal(decision.kind, 'accept');
+    assert.ok(decision.content);
+    assert.equal(decision.content.length, 2);
+    assert.equal(decision.content[0], imageBlock); // exactly preserved
+    assert.equal(decision.content[1].text, 'On branch main: working tree clean');
+  });
 });
