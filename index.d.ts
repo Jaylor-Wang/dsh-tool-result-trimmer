@@ -29,17 +29,17 @@ export interface SemanticReducersConfig {
 }
 
 export interface SpilloverConfig {
-  /** Whether to enable disk spillover for mechanically trimmed raw outputs. Default: true */
+  /** Persist trimmed raw output, preferring the host's session-owned spillStore. Default: true */
   enabled?: boolean;
-  /** Custom directory for spillover log files. Default: os.tmpdir()/dsh-trimmed */
+  /** Local fallback directory when session storage is unavailable. Default: os.tmpdir()/dsh-trimmed */
   directory?: string | null;
   /** Maximum bytes for a single spillover log file. Default: 20000000 (20MB) */
   maxFileBytes?: number;
-  /** Maximum cumulative bytes across all spillover logs. Default: 200000000 (200MB) */
+  /** Maximum cumulative bytes in the local fallback directory. Default: 200000000 (200MB) */
   maxTotalBytes?: number;
-  /** Maximum number of spillover files to retain. Default: 1000 */
+  /** Maximum number of local fallback files to retain. Default: 1000 */
   maxFiles?: number;
-  /** Time-to-live for spillover files in milliseconds. Default: 604800000 (7 days) */
+  /** Time-to-live for local fallback files in milliseconds. Default: 604800000 (7 days) */
   ttlMs?: number;
   /** Save raw text and append a recovery notice for semantic-only reductions. Default: false */
   onSemanticReduction?: boolean;
@@ -80,13 +80,13 @@ export interface ToolResultTrimmerConfig {
   stripAnsi?: boolean;
   /** Character threshold above which trimming is triggered. Default: 10000 */
   thresholdChars?: number;
-  /** Retained character budget for head (command args / start state). Default: 1500 */
+  /** Global head budget. Default: 1500; web/MCP tools use the larger of the two budgets for their head. */
   headChars?: number;
-  /** Retained character budget for tail (stack traces / exit codes). Default: 5000 */
+  /** Global tail budget. Default: 5000; web/MCP tools use the smaller of the two budgets for their tail. */
   tailChars?: number;
   /** Tool names excluded from trimming. Default: ['read', 'read_image'] */
   excludeTools?: string[];
-  /** Per-tool budget overrides and configuration. Default: {} */
+  /** Exact tool-name overrides take priority over tool-family budgets; enabled: false delegates to the host. Default: {} */
   overrides?: Record<string, ToolOverrideConfig>;
   /** Command-aware semantic reducers configuration. Default: { enabled: true, git: true, packageManager: true, test: true, build: true, lint: true } */
   semanticReducers?: SemanticReducersConfig;

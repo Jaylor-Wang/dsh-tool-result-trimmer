@@ -30,7 +30,7 @@
 4. **结构化 JSON 保护（Structured Output Protection）**：
    默认完整保留合法 JSON（`mode: preserve`），即便超出字符阈值也绝不暴力破坏语法结构；可选 `mode: summary` 安全采样超大顶层数组并生成合法的带标记 JSON 摘要；亦支持 `mode: off` 恢复旧版普通截断。
 5. **受控可追溯持久化（Controlled Spillover）**：
-   默认在裁剪发生时将完整原文原子写入本地磁盘（`spillover.enabled: true`），并在截断提示中回显恢复路径，方便 Agent 或开发者直接查看原文而无需重跑耗时任务；具备容量上限、文件数预算、TTL 过期清理及跨进程目录锁保护。
+   识别并复用 bash 或官方 spill-policy 已有的恢复提示；新增存储优先使用宿主按会话管理的 `ctx.spillStore`，保留定位符和读取指引。独立使用时回退到具备原子写入、容量上限、TTL 清理和跨进程锁的本地文件（`spillover.enabled: true` 默认启用）。
 6. **行吸附算法（Line-Aware Snapping · 绝不截断代码行）**：
    优先吸附附近的换行符（`\n`），必要时回退到字符边界，并严格避免拆开 UTF-16 代理对。
 7. **终端 ANSI 控制字符自动剥离（Clean Terminal Output）**：
@@ -130,13 +130,15 @@ pnpm add dsh-tool-result-trimmer
 | `headChars` | `number` | `1500` | 全局头部保留字符预算（保留初始执行上下文）。 |
 | `tailChars` | `number` | `5000` | 全局尾部保留字符预算（优先保留错误堆栈与退出状态）。 |
 | `excludeTools` | `string[]` | `['read', 'read_image']` | 免于裁剪与清洗的工具列表。 |
-| `overrides` | `Record<string, ToolOverride>` | `{}` | 分工具差异化配置字典。支持单独设置特定工具的 `thresholdChars`、`headChars`、`tailChars`、`stripAnsi`，或设置 `enabled: false` 彻底跳过该工具。 |
+| `overrides` | `Record<string, ToolOverride>` | `{}` | 按工具完整名称匹配，优先于工具类别默认预算。支持 `thresholdChars`、`headChars`、`tailChars`、`stripAnsi`；`enabled: false` 跳过插件，交由宿主策略处理。 |
 | `semanticReducers` | `object` | `{ enabled: true, ... }` | 命令感知语义压缩器配置。包含 `enabled`、`git`、`packageManager`、`test`、`build`、`lint` 开关，可单独按需控制。 |
 | `spillover` | `object` | `{ enabled: true, ... }` | 受控的截断日志本地落盘设置（`enabled`、`directory`、`maxFileBytes`、`maxTotalBytes`、`maxFiles`、`ttlMs`、`onSemanticReduction`）。 |
 | `structuredOutput.mode` | `preserve \| summary \| off` | `preserve` | 保护完整 JSON、显式启用数组摘要，或使用旧版文本裁剪。 |
 | `metrics.enabled` | `boolean` | `false` | 输出不含原文的逐结果统计；默认关闭。 |
 
 ---
+
+默认工具预算：`bash` 和其他未分类工具沿用全局头部 1500 / 尾部 5000；`web`、`web_`、`web-`、`web.` 开头的工具、`fetch` 及 `mcp__`、`mcp_`、`mcp-`、`mcp.` 开头的工具将两个全局预算中的较大值用于头部、较小值用于尾部（默认 5000 / 1500，总预算不变）。工具名按类别边界匹配，不把 `webhook` 等名称归入网页工具。显式 `overrides` 的每个字段优先，未覆盖字段使用对应类别默认值。如希望官方 spill-policy 独立处理某个网页/MCP 工具，请对其完整名称设置 `enabled: false`。
 
 ## 统计
 
@@ -181,19 +183,23 @@ pnpm add dsh-tool-result-trimmer
 <从换行开始的完整错误堆栈与退出码>
 ```
 
-在落盘启用（默认启用）且保存成功时，横幅中会提供完整原始文本的本地路径。模型或开发者无需重新运行长耗时命令，即可使用 `read` 或 `grep` 检索日志：
+在存储启用（默认启用）且保存成功时，横幅提供完整原文的定位符及后端读取指引。本地回退存储返回可供 `read` 或 `grep` 使用的路径：
 
 ```text
 [... tool output trimmed: omitted 45,210 characters (~1,280 lines); full output saved to /tmp/dsh-trimmed/trimmed-bash-a8f2c9.log ...]
 ```
 
-语义压缩只识别简单的直接命令及已知的 `npx`、`npm exec`、`pnpm exec`、`yarn exec` 包装，包括 `.cmd` 和 `.exe`；明确消费 `--filter`、`--prefix`、`--package` 等已知选项值，未知包装选项和 shell-call 模式原样放行。包管理器过滤仅应用于明确的包操作，子工具和脚本别名不能绕过自身 reducer 开关。Git 干净状态摘要保留退出标记，遇未知输出保留原文；测试摘要要求通过数一致，且无取消或失败证据；进度过滤保留诊断、未知 spinner 输出及 POSIX/Windows 路径。不推断 shell 命令链、带引号命令或包脚本别名。webpack 仅在 `--progress`、明确编译成功且出现严格匹配的无路径进度行时压缩；已通过 Webpack 5.112.2 真实输出样例验证。TypeScript、ESLint、Ruff 和 Biome 经实测成功时输出极小或为空，无需成功态压缩；其任何诊断、错误及非零退出状态均逐字节完整保留。语义 Fail-Open 不会关闭普通机械裁剪；需要完整输出时使用旁路标记。
+语义压缩只识别简单的直接命令及已知的 `npx`、`npm exec`、`pnpm exec`、`yarn exec` 包装，包括 `.cmd` 和 `.exe`；明确消费 `--filter`、`--prefix`、`--package` 等已知选项值，未知包装选项和 shell-call 模式原样放行。包管理器过滤仅应用于明确的包操作，子工具和脚本别名不能绕过自身 reducer 开关。Git 干净状态摘要保留退出标记，遇未知输出保留原文；测试摘要要求通过数一致，且无取消或失败证据；进度过滤保留诊断、未知 spinner 输出及 POSIX/Windows 路径。支持末尾独立的 `2>&1` 和一次前置 `cd X &&`（目录可使用字面量引号），两者可组合。相对目录结合调用参数 `workdir` 解析，不读取插件进程的当前目录；未提供 `workdir` 时保留相对目录。其他命令链、变量/命令替换、额外重定向、带引号的实际命令参数及包脚本别名仍不推断。webpack 仅在 `--progress`、明确编译成功且出现严格匹配的无路径进度行时压缩；已通过 Webpack 5.112.2 真实输出样例验证。TypeScript、ESLint、Ruff 和 Biome 经实测成功时输出极小或为空，无需成功态压缩；其任何诊断、错误及非零退出状态均逐字节完整保留。语义 Fail-Open 不会关闭普通机械裁剪；需要完整输出时使用旁路标记。
 
 结构化保护在 ANSI 清理和语义压缩之前识别原始文本投影中的完整 JSON。默认 `preserve` 原样保留，即使超出阈值也可能占用较大上下文。`summary` 仅将超阈值、单文本 block 的顶层数组替换为带标记的 JSON 对象，包含 `totalItems`、受预算限制的 `head` 和 `tail` 样本，以及 `spilloverPath`（不可用时为 null）。在执行失败或状态不确定时严格原样保留完整 JSON；当样本无法放入预算、摘要不能节省空间或数值重序列化可能丢失精度（包括小数和指数形式）时同样保留原文。对象、标量及多文本 block JSON 均保留原文。摘要样本可能包含敏感数据；启用落盘时会保存完整原始文本。`off` 恢复旧版处理。非法 JSON、带额外日志或 ANSI 包装的 JSON 按普通文本处理。
 
 多个文本 block 按原顺序直接拼接，不额外插入分隔符。字符预算按 UTF-16 代码单元计算，保留 CRLF。语义压缩仅处理恰好包含一个文本 block 的结果。落盘保存 ANSI 清理和语义压缩之前的上述文本投影；图片等非文本 block 保留在返回结果中。
 
-落盘功能默认开启（可配置 `spillover.enabled: false` 关闭），文件可能包含敏感输出。POSIX 文件权限为 `0600`，新建目录为 `0700`；Windows 权限遵循父目录 ACL，请选择私有目录。每次写入前在跨进程共享的目录锁内检查容量，锁被占用时立即降级。清理只处理完整匹配插件文件名的文件，每次最多扫描 4096 个条目并额外检查一次是否溢出，最多删除 128 个文件。目录过大、容量不足、锁被占用或磁盘错误时跳过落盘，仍返回普通截断横幅。清理由后续写入或显式调用触发，TTL 不会在空闲时定时删除文件。进程异常退出可能留下 `.dsh-trimmer.lock`，确认没有写入进程后再移除。
+完整的 `[output truncated; full output: …]` 提示行和结尾的官方 spill-policy 提示会保留，即使尾部预算不足也不会丢失。插件直接复用其中的恢复位置及读取指引，不再保存已经截断的预览；关闭新增落盘时也保留已有提示。这只是文本约定识别，不认证来源，也不检查定位符是否仍可访问。
+
+新增存储优先调用 `ctx.spillStore.saveText`，传入产生结果的会话 ID、工具名和调用 ID；定位符按原样展示，并保留 `retrievalHint`。JSON 数组摘要将定位符放入 `spilloverPath`，后端提供读取指引时增加 `spilloverRetrievalHint`。`maxFileBytes` 对两种存储均生效；会话存储的保留策略由后端管理，`directory`、`maxTotalBytes`、`maxFiles`、`ttlMs` 仅约束本地回退目录。缺少存储能力或会话/来源信息时使用本地存储。后端报错时仍正常裁剪，不宣称保存成功，也不再尝试第二次写入。
+
+本地回退落盘默认开启（可配置 `spillover.enabled: false` 关闭），文件可能包含敏感输出。POSIX 文件权限为 `0600`，新建目录为 `0700`；Windows 权限遵循父目录 ACL，请选择私有目录。每次写入前在跨进程共享的目录锁内检查容量，锁被占用时立即降级。清理只处理完整匹配插件文件名的文件，每次最多扫描 4096 个条目并额外检查一次是否溢出，最多删除 128 个文件。目录过大、容量不足、锁被占用或磁盘错误时跳过落盘，仍返回普通截断横幅。清理由后续写入或显式调用触发，TTL 不会在空闲时定时删除文件。锁文件记录 PID 和随机所有权标记；后续写入或清理仅在 `process.kill(pid, 0)` 明确返回 `ESRCH` 时回收。回收使用同一代锁的独占硬链接及文件身份复核，避免多个回收者误删新锁。仍存活的 PID（包括 PID 复用）、权限错误、旧版空锁或损坏元数据均保守跳过，不按文件年龄强删。不支持硬链接的文件系统无法自动回收；回收进程自身异常退出留下的 `.reap-*` 协调文件也保守保留，需确认无写入/回收进程后人工处理。
 
 显式设置 `onSemanticReduction: true` 后，仅语义压缩也会保存原文，并追加独立的恢复提示；默认值为 `false`。短输出和仅 ANSI 清理不执行磁盘 I/O。
 
