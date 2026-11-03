@@ -156,7 +156,8 @@ describe('P0/P1 acceptance regressions', () => {
   it('removes partial temporary files and releases the lock after write or rename failures', (t) => {
     const dir = directory('atomic-failures');
     const write = fs.writeFileSync;
-    t.mock.method(fs, 'writeFileSync', function (fd) {
+    t.mock.method(fs, 'writeFileSync', function (fd, content, ...args) {
+      if (content !== 'complete') return write(fd, content, ...args);
       write(fd, 'partial');
       throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
     });
@@ -270,6 +271,10 @@ describe('P0/P1 acceptance regressions', () => {
       assert.equal(Config({}).spillover.enabled, true);
       assert.equal(Config({ spillover: { enabled: false } }).spillover.enabled, false);
       assert.equal(Config({ spillover: { enabled: true } }).spillover.maxFiles, 1000);
+      assert.equal(Config({}).diagnostics.enabled, true);
+      assert.equal(Config({}).diagnostics.intervalMs, 60000);
+      assert.equal(Config({ diagnostics: { enabled: false } }).diagnostics.enabled, false);
+      assert.throws(() => Config({ diagnostics: { intervalMs: 0 } }));
       assert.equal(Config({}).metrics.enabled, false);
       assert.equal(Config({ metrics: { enabled: true } }).metrics.enabled, true);
       assert.equal(typeof Config({ metrics: { enabled: true, onEvent() {} } }).metrics.onEvent, 'function');

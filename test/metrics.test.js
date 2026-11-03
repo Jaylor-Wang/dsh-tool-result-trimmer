@@ -49,6 +49,10 @@ describe('P4 opt-in metrics', () => {
     assert.ok(event.omittedLines > 0);
     assert.equal(event.reducer, null);
     assert.equal(event.spillover, 'not-attempted');
+    assert.equal(event.spilloverBackend, 'none');
+    assert.equal(event.spilloverReason, null);
+    assert.equal(event.spilloverFallbackReason, null);
+    assert.equal(event.spilloverDurationMs, 0);
     const payload = JSON.stringify(event);
     for (const secret of ['secret-output', 'secret-command', 'sensitive-id', root]) assert.equal(payload.includes(secret), false);
   });
@@ -82,6 +86,7 @@ describe('P4 opt-in metrics', () => {
     fs.writeFileSync(file, 'block');
     await run('text\n'.repeat(300), { metrics, spillover: { enabled: true, directory: file } });
     assert.equal(events[1].spillover, 'failed');
+    assert.equal(events[1].spilloverReason, 'storage-io');
     assert.equal(events[1].cleanup, 'not-attempted');
   });
 
@@ -93,6 +98,7 @@ describe('P4 opt-in metrics', () => {
     fs.writeFileSync(path.join(locked, '.dsh-trimmer.lock'), 'lock');
     await run('text\n'.repeat(300), { metrics, spillover: { enabled: true, directory: locked } });
     assert.equal(events[0].spillover, 'failed');
+    assert.equal(events[0].spilloverReason, 'lock-invalid');
     assert.equal(events[0].cleanup, 'not-attempted');
     const dir = path.join(root, 'cleanup-failed');
     fs.mkdirSync(dir);
@@ -107,6 +113,7 @@ describe('P4 opt-in metrics', () => {
     await run('text\n'.repeat(300), { metrics, spillover: { enabled: true, directory: dir, ttlMs: 1000, maxFiles: 1 } });
     assert.equal(events[1].spillover, 'failed');
     assert.equal(events[1].cleanup, 'failed');
+    assert.equal(events[1].spilloverReason, 'cleanup-io');
     assert.equal(events[1].cleanupDeleted, 0);
   });
 

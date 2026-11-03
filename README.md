@@ -135,6 +135,8 @@ If you are composing a custom agent preset or using Cordis outside the DSH profi
 | `spillover` | `object` | `{ enabled: true, ... }` | Controlled disk spillover settings (`enabled`, `directory`, `maxFileBytes`, `maxTotalBytes`, `maxFiles`, `ttlMs`, `onSemanticReduction`). |
 | `structuredOutput.mode` | `preserve \| summary \| off` | `preserve` | Protect complete JSON, opt into array summaries, or use legacy text trimming. |
 | `metrics.enabled` | `boolean` | `false` | Emit privacy-preserving per-result metrics; disabled by default. |
+| `diagnostics.enabled` | `boolean` | `true` | Log fixed storage failure/degradation codes independently of metrics. |
+| `diagnostics.intervalMs` | `number` | `60000` | Minimum warning interval per reason per plugin instance, using a monotonic clock. |
 
 ---
 
@@ -147,6 +149,10 @@ When explicitly enabled, each accepted, non-excluded text result emits one event
 Events contain only an allowlisted built-in reducer name (unknown names are reported as null), UTF-16 input/output text lengths, semantic/structured/mechanical flags, mechanical omitted characters and newline counts, and spillover/cleanup statuses and deletion count. Output length includes notices and paths already returned to the caller, but their text is never included in metrics. Cleanup `complete` means the bounded scan and admission completed without a failed deletion, not that all expired files have been removed. Lengths and counts can still reveal output size; enable logging only where that metadata is acceptable. No token estimation is performed.
 
 ---
+
+Storage observations add `spilloverBackend` (`none`, `session`, `local`), `spilloverFallbackReason` (`missing-store`, `missing-source`, or null), `spilloverReason` (a fixed code or null), and `spilloverDurationMs` (monotonic end-to-end attempt time). Unattempted results have backend `none`, null reasons, and zero duration. Calculate the local fallback ratio as local attempts divided by local plus session attempts; compare duration percentiles separately by backend and success/failure. No production ratio is inferred from tests. Local scans remain synchronous and bounded; timings include capability resolution, locking, cleanup and writing, rather than scan time alone.
+
+Failure codes are `invalid-config`, `file-too-large`, `lock-busy`, `lock-invalid`, `lock-owner-unknown`, `lock-changed`, `lock-recovery-blocked`, `lock-unsupported`, `scan-limit`, `capacity`, `cleanup-limit`, `cleanup-io`, `storage-io`, `backend-error`, and `backend-response`. A successful spill can still report a cleanup degradation code. Diagnostics log only the fixed reason and backend, without exception messages, paths, commands, output, or session/call IDs. Each reason logs at most once per 60 seconds by default; `diagnostics.enabled: false` disables warnings without disabling metrics.
 
 ## Escape Hatch (Bypass Mechanism)
 
@@ -199,7 +205,23 @@ Complete `[output truncated; full output: …]` lines and final official spill-p
 
 New spills prefer `ctx.spillStore.saveText` with the producing session ID, tool name, and call ID. Opaque locators are displayed verbatim with `retrievalHint`; JSON array summaries carry the locator in `spilloverPath` and add `spilloverRetrievalHint` when provided. `maxFileBytes` applies to both storage paths. The backend owns retention for session storage; `directory`, `maxTotalBytes`, `maxFiles`, and `ttlMs` apply only to the local fallback. Missing capability or session/source metadata selects local storage. Backend errors keep ordinary trimming without a success notice or a second write attempt.
 
-Local fallback storage is enabled by default (can be disabled via `spillover.enabled: false`) and may contain sensitive output. Files use `0600` and newly created directories use `0700` on POSIX; Windows access follows the parent directory ACL, so choose a private directory. Each write checks capacity under a non-waiting directory lock shared by cooperating processes. Cleanup only touches exact plugin filenames, scans at most 4096 entries plus one overflow check, and deletes at most 128 files per call. A busy lock, incomplete scan, exhausted budget or disk error skips spillover and retains the usual omission banner. Cleanup runs on subsequent writes or explicit pruning; TTL is not a timer that deletes idle files. Locks record a PID and random ownership token. Subsequent writes or explicit cleanup reclaim them only when `process.kill(pid, 0)` reports `ESRCH`. An exclusive hard link for that lock generation and file-identity checks prevent concurrent reapers from removing a replacement lock. Live PIDs (including reused PIDs), permission errors, legacy empty locks and malformed metadata remain untouched; age never authorizes deletion. Filesystems without hard-link support cannot recover automatically. A reaper crash can leave a `.reap-*` coordination file, which is retained conservatively and requires manual removal after verifying that no writer or reaper is active.
+Local fallback storage is enabled by default (can be disabled via `spillover.enabled: false`) and may contain sensitive output. Files use `0600` and newly created directories use `0700` on POSIX; Windows access follows the parent directory ACL, so choose a private directory. Each write checks capacity under a non-waiting directory lock shared by cooperating processes. Cleanup only touches exact plugin filenames, scans at most 4096 entries plus one overflow check, and deletes at most 128 files per call. A busy lock, incomplete scan, exhausted budget or disk error skips spillover and retains the usual omission banner. Cleanup runs on subsequent writes or explicit pruning; TTL is not a timer that deletes idle files. Locks record a PID and random ownership token. Complete metadata is written to a unique candidate, closed, then published with an exclusive hard link without replacing an existing lock. A process exit before publication can leave an unused candidate but cannot publish an empty lock; a process exit after publication leaves complete metadata. This protects against process termination, not filesystem corruption or power-loss durability. Hard-link support is required for local writes; unsupported filesystems skip local storage with a diagnostic. Subsequent writes or explicit cleanup reclaim locks only when `process.kill(pid, 0)` reports `ESRCH`. An exclusive hard link for that lock generation and file-identity checks prevent concurrent reapers from removing a replacement lock. Live PIDs (including reused PIDs), permission errors, legacy empty locks and malformed metadata remain untouched; age never authorizes deletion. A reaper crash can leave a `.reap-*` coordination file; unused candidates and blocked recovery artifacts are handled through the offline command below.
+
+### Offline lock inspection and recovery
+
+The installed `dsh-trimmer-lock` command defaults to inspection. In a source checkout use `node scripts/spill-lock.js`. Pass the configured local fallback directory explicitly; omitting it selects the default temporary directory.
+
+```bash
+node scripts/spill-lock.js --directory "PATH_TO_SPILL_DIRECTORY"
+```
+
+Before applying repair, stop every writer and recovery process sharing that directory, inspect again, and copy the returned `fingerprint`. Apply only to that same unchanged snapshot:
+
+```bash
+node scripts/spill-lock.js --directory "PATH_TO_SPILL_DIRECTORY" --apply --writers-stopped --fingerprint HASH_FROM_INSPECTION
+```
+
+`--writers-stopped` is an operator declaration, not automatic proof that all possible writers are stopped. Repair refuses live or uncheckable owners, non-file lock artifacts, changed snapshots, and scans exceeding 4096 entries. It removes only exact lock/candidate/reaper filenames, preserving saved logs and unrelated files; malformed and legacy empty locks require this explicit offline operation. There is no age-based automatic override. Keep writers stopped until repair finishes because portable filesystems do not provide conditional unlink. The equivalent programmatic API is `repairSpilloverLock(directory, options)`.
 
 `onSemanticReduction: true` also saves semantic-only reductions and appends a separate recovery notice. Its default is `false`; short outputs and ANSI-only changes perform no disk I/O.
 

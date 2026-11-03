@@ -94,6 +94,7 @@ describe('Abandoned spill lock recovery', () => {
     const link = fs.linkSync;
     const replacement = JSON.stringify({ pid: process.pid, token: 'b'.repeat(32) });
     t.mock.method(fs, 'linkSync', (source, target) => {
+      if (source !== lock) return link(source, target);
       assert.equal(source, lock);
       assert.equal(target, `${lock}.reap-${token}`);
       fs.unlinkSync(lock);

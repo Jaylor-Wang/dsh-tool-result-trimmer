@@ -135,6 +135,8 @@ pnpm add dsh-tool-result-trimmer
 | `spillover` | `object` | `{ enabled: true, ... }` | 受控的截断日志本地落盘设置（`enabled`、`directory`、`maxFileBytes`、`maxTotalBytes`、`maxFiles`、`ttlMs`、`onSemanticReduction`）。 |
 | `structuredOutput.mode` | `preserve \| summary \| off` | `preserve` | 保护完整 JSON、显式启用数组摘要，或使用旧版文本裁剪。 |
 | `metrics.enabled` | `boolean` | `false` | 输出不含原文的逐结果统计；默认关闭。 |
+| `diagnostics.enabled` | `boolean` | `true` | 记录固定的存储失败/降级原因，独立于统计开关。 |
+| `diagnostics.intervalMs` | `number` | `60000` | 每个插件实例中，同一原因的最小日志间隔；使用单调时钟。 |
 
 ---
 
@@ -147,6 +149,10 @@ pnpm add dsh-tool-result-trimmer
 事件仅包含白名单内的内置 reducer 名称（未知名称记为 null）、输入/输出文本的 UTF-16 长度、语义/结构化/机械处理标记、机械省略字符数与换行数，以及落盘/清理状态和删除数量。输出长度包含已经返回给调用者的提示及路径长度，但统计不包含其文本。清理状态 `complete` 表示有界扫描与准入完成且没有删除失败，并不保证所有过期文件均已删除。长度与数量仍可能泄露输出规模，请仅在接受此类元数据的环境中启用。不进行 token 估算。
 
 ---
+
+存储观测新增 `spilloverBackend`（`none`、`session`、`local`）、`spilloverFallbackReason`（`missing-store`、`missing-source` 或 null）、`spilloverReason`（固定原因码或 null）和 `spilloverDurationMs`（单调时钟测得的整次存储尝试耗时）。未尝试存储时后端为 `none`、原因为 null、耗时为零。本地回退比例按 `local 次数 / (local 次数 + session 次数)` 计算；耗时分位数应按后端和成功/失败分别统计。测试不代表生产比例。本地扫描仍为有界同步操作；耗时包含能力查询、锁、清理与写盘，并非单独的扫描耗时。
+
+原因码包括 `invalid-config`、`file-too-large`、`lock-busy`、`lock-invalid`、`lock-owner-unknown`、`lock-changed`、`lock-recovery-blocked`、`lock-unsupported`、`scan-limit`、`capacity`、`cleanup-limit`、`cleanup-io`、`storage-io`、`backend-error`、`backend-response`。写入成功但清理降级时也可携带原因码。诊断仅记录固定原因及后端，不含异常消息、路径、命令、原文或会话/调用 ID。同一原因默认每 60 秒至多记录一次；设置 `diagnostics.enabled: false` 可关闭诊断而保留统计。
 
 ## 紧急逃生通道（Bypass 机制）
 
@@ -199,7 +205,23 @@ pnpm add dsh-tool-result-trimmer
 
 新增存储优先调用 `ctx.spillStore.saveText`，传入产生结果的会话 ID、工具名和调用 ID；定位符按原样展示，并保留 `retrievalHint`。JSON 数组摘要将定位符放入 `spilloverPath`，后端提供读取指引时增加 `spilloverRetrievalHint`。`maxFileBytes` 对两种存储均生效；会话存储的保留策略由后端管理，`directory`、`maxTotalBytes`、`maxFiles`、`ttlMs` 仅约束本地回退目录。缺少存储能力或会话/来源信息时使用本地存储。后端报错时仍正常裁剪，不宣称保存成功，也不再尝试第二次写入。
 
-本地回退落盘默认开启（可配置 `spillover.enabled: false` 关闭），文件可能包含敏感输出。POSIX 文件权限为 `0600`，新建目录为 `0700`；Windows 权限遵循父目录 ACL，请选择私有目录。每次写入前在跨进程共享的目录锁内检查容量，锁被占用时立即降级。清理只处理完整匹配插件文件名的文件，每次最多扫描 4096 个条目并额外检查一次是否溢出，最多删除 128 个文件。目录过大、容量不足、锁被占用或磁盘错误时跳过落盘，仍返回普通截断横幅。清理由后续写入或显式调用触发，TTL 不会在空闲时定时删除文件。锁文件记录 PID 和随机所有权标记；后续写入或清理仅在 `process.kill(pid, 0)` 明确返回 `ESRCH` 时回收。回收使用同一代锁的独占硬链接及文件身份复核，避免多个回收者误删新锁。仍存活的 PID（包括 PID 复用）、权限错误、旧版空锁或损坏元数据均保守跳过，不按文件年龄强删。不支持硬链接的文件系统无法自动回收；回收进程自身异常退出留下的 `.reap-*` 协调文件也保守保留，需确认无写入/回收进程后人工处理。
+本地回退落盘默认开启（可配置 `spillover.enabled: false` 关闭），文件可能包含敏感输出。POSIX 文件权限为 `0600`，新建目录为 `0700`；Windows 权限遵循父目录 ACL，请选择私有目录。每次写入前在跨进程共享的目录锁内检查容量，锁被占用时立即降级。清理只处理完整匹配插件文件名的文件，每次最多扫描 4096 个条目并额外检查一次是否溢出，最多删除 128 个文件。目录过大、容量不足、锁被占用或磁盘错误时跳过落盘，仍返回普通截断横幅。清理由后续写入或显式调用触发，TTL 不会在空闲时定时删除文件。锁文件记录 PID 和随机所有权标记；先完整写入唯一候选文件并关闭，再通过独占硬链接发布，不覆盖已有锁。发布前进程退出只会留下未使用的候选文件，不会发布空锁；发布后进程退出则保留完整元数据。这保障进程中断场景，不承诺文件系统损坏或断电后的持久性。本地写入要求文件系统支持硬链接；不支持时跳过落盘并记录诊断。后续写入或清理仅在 `process.kill(pid, 0)` 明确返回 `ESRCH` 时回收。回收使用同一代锁的独占硬链接及文件身份复核，避免多个回收者误删新锁。仍存活的 PID（包括 PID 复用）、权限错误、旧版空锁或损坏元数据均保守跳过，不按文件年龄强删。回收进程异常退出留下的 `.reap-*` 协调文件及未使用候选文件可通过下方离线命令处理。
+
+### 离线锁检查与恢复
+
+安装后的命令为 `dsh-trimmer-lock`，默认只检查。在源码仓库中可用 `node scripts/spill-lock.js`。建议显式传入配置中的本地回退目录；省略时使用默认临时目录。
+
+```bash
+node scripts/spill-lock.js --directory "PATH_TO_SPILL_DIRECTORY"
+```
+
+执行恢复前，停止共享该目录的所有写入和回收进程，再次检查并复制返回的 `fingerprint`，仅对同一份未变化的快照应用恢复：
+
+```bash
+node scripts/spill-lock.js --directory "PATH_TO_SPILL_DIRECTORY" --apply --writers-stopped --fingerprint HASH_FROM_INSPECTION
+```
+
+`--writers-stopped` 是操作者声明，不是自动证明所有潜在写入者均已停止。命令拒绝处理存活或无法确认状态的所有者、非普通文件的锁对象、已变化的快照及超过 4096 项的目录。只删除严格匹配的锁、候选和回收协调文件，保留日志和无关文件；旧版空锁或损坏元数据需要此显式离线操作，不提供按年龄强制覆盖。恢复结束前应保持相关进程停止，因为可移植文件系统没有附带文件身份条件的删除操作。程序接口为 `repairSpilloverLock(directory, options)`。
 
 显式设置 `onSemanticReduction: true` 后，仅语义压缩也会保存原文，并追加独立的恢复提示；默认值为 `false`。短输出和仅 ANSI 清理不执行磁盘 I/O。
 

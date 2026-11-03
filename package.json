@@ -1,10 +1,13 @@
 {
   "name": "dsh-tool-result-trimmer",
-  "version": "2.5.0",
+  "version": "2.7.0",
   "description": "Eager, tail-heavy, line-aware tool result trimmer plugin for DeepSeek Harness (dsh) and Cordis.",
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
+  "bin": {
+    "dsh-trimmer-lock": "scripts/spill-lock.js"
+  },
   "exports": {
     ".": "./index.js",
     "./locale/*.json": "./locale/*.json",
@@ -44,6 +47,7 @@
     "index.d.ts",
     "tsconfig.json",
     "scripts/typecheck.js",
+    "scripts/spill-lock.js",
     "cordis.patch.yml",
     "locale/*.json",
     "lib",

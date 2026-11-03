@@ -50,6 +50,35 @@ export interface StructuredOutputConfig {
   mode?: 'preserve' | 'summary' | 'off';
 }
 
+export type StorageFailureReason =
+  | 'invalid-config' | 'file-too-large' | 'lock-busy' | 'lock-invalid' | 'lock-owner-unknown'
+  | 'lock-changed' | 'lock-recovery-blocked' | 'lock-unsupported' | 'scan-limit'
+  | 'capacity' | 'cleanup-limit' | 'cleanup-io' | 'storage-io' | 'backend-error' | 'backend-response';
+
+export interface StorageDiagnosticsConfig {
+  /** Emit fixed storage reason codes through the logger, independently of metrics. Default: true */
+  enabled?: boolean;
+  /** Minimum interval for each reason per plugin instance in milliseconds. Default: 60000 */
+  intervalMs?: number;
+}
+
+export interface SpilloverLockRepairOptions {
+  /** Inspect only unless true. */
+  apply?: boolean;
+  /** Assert that all writers and recovery processes using this directory have stopped. */
+  writersStopped?: boolean;
+  /** Fingerprint returned by a previous inspection of the same unchanged directory artifacts. */
+  fingerprint?: string;
+}
+
+export interface SpilloverLockRepairResult {
+  status: 'inspected' | 'repaired' | 'refused';
+  fingerprint?: string;
+  artifacts?: Array<{ name: string; status: 'invalid' | 'live' | 'dead' | 'unknown' }>;
+  removed: number;
+  reason?: 'writers-not-stopped' | 'snapshot-changed' | 'owner-active-or-unknown' | 'scan-limit' | 'storage-io';
+}
+
 export interface TrimmerMetricsEvent {
   reducer: 'git' | 'packageManager' | 'test' | 'build' | 'lint' | null;
   originalChars: number;
@@ -62,6 +91,13 @@ export interface TrimmerMetricsEvent {
   /** Newline characters in the mechanically omitted segment. */
   omittedLines: number;
   spillover: 'not-attempted' | 'success' | 'failed';
+  /** Selected storage backend; none for unattempted or pre-storage refusals. */
+  spilloverBackend: 'none' | 'session' | 'local';
+  /** Also reports cleanup degradation when the new output was saved successfully. */
+  spilloverReason: StorageFailureReason | null;
+  spilloverFallbackReason: 'missing-store' | 'missing-source' | null;
+  /** Monotonic end-to-end storage attempt duration, including capability resolution. */
+  spilloverDurationMs: number;
   cleanup: 'not-attempted' | 'complete' | 'failed';
   cleanupDeleted: number;
 }
@@ -94,6 +130,8 @@ export interface ToolResultTrimmerConfig {
   spillover?: SpilloverConfig;
   /** Structured JSON protection. Default: { mode: 'preserve' } */
   structuredOutput?: StructuredOutputConfig;
+  /** Rate-limited storage diagnostics. Default: { enabled: true, intervalMs: 60000 } */
+  diagnostics?: StorageDiagnosticsConfig;
   /** Opt-in aggregate metrics. Default: { enabled: false } */
   metrics?: MetricsConfig;
 }
@@ -114,6 +152,7 @@ export declare function reduceTestOutput(exec: unknown, text: string, result?: u
 export declare function reduceBuild(exec: unknown, text: string, result?: unknown): string | null;
 export declare function reduceLint(exec: unknown, text: string, result?: unknown): string | null;
 export declare function writeSpillover(rawText: string, spilloverConfig?: SpilloverConfig, exec?: unknown): string | null;
+export declare function repairSpilloverLock(directory: string, options?: SpilloverLockRepairOptions): SpilloverLockRepairResult;
 export declare function apply(ctx: Context, config?: ToolResultTrimmerConfig): void;
 
 declare const _default: {
