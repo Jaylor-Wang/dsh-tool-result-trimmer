@@ -140,7 +140,7 @@ pnpm add dsh-tool-result-trimmer
 
 ---
 
-默认工具预算：`bash` 和其他未分类工具沿用全局头部 1500 / 尾部 5000；`web`、`web_`、`web-`、`web.` 开头的工具、`fetch` 及 `mcp__`、`mcp_`、`mcp-`、`mcp.` 开头的工具将两个全局预算中的较大值用于头部、较小值用于尾部（默认 5000 / 1500，总预算不变）。工具名按类别边界匹配，不把 `webhook` 等名称归入网页工具。显式 `overrides` 的每个字段优先，未覆盖字段使用对应类别默认值。如希望官方 spill-policy 独立处理某个网页/MCP 工具，请对其完整名称设置 `enabled: false`。
+默认工具预算：`bash` 和其他未分类工具沿用全局头部 1500 / 尾部 5000。通过 `bash` 执行的字面量 `mcporter call exa.web_search_exa` / `exa.web_fetch_exa`，以及目标主机为 `r.jina.ai` 的单 URL `curl` 命令，也采用头部优先预算；shell 命令链、变量展开、其他网址和其他 bash 命令仍使用 bash 默认预算。`web`、`web_`、`web-`、`web.` 开头的工具、`fetch` 及 `mcp__`、`mcp_`、`mcp-`、`mcp.` 开头的工具将两个全局预算中的较大值用于头部、较小值用于尾部（默认 5000 / 1500，总预算不变）。工具名按类别边界匹配，不把 `webhook` 等名称归入网页工具。显式 `overrides` 的每个字段优先，未覆盖字段使用对应类别默认值。如希望官方 spill-policy 独立处理某个网页/MCP 工具，请对其完整名称设置 `enabled: false`。
 
 ## 统计
 

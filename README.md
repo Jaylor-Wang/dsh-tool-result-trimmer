@@ -140,7 +140,7 @@ If you are composing a custom agent preset or using Cordis outside the DSH profi
 
 ---
 
-Default tool budgets: `bash` and unclassified tools retain the global 1500 head / 5000 tail split. `web`, tools prefixed with `web_`, `web-`, or `web.`, `fetch`, and tools prefixed with `mcp__`, `mcp_`, `mcp-`, or `mcp.` allocate the larger global budget to the head and the smaller to the tail (5000 / 1500 by default, with the same total). Family boundaries exclude unrelated names such as `webhook`. Each explicit `overrides` field takes priority; omitted fields use the family default. To let the official spill policy handle a web/MCP tool alone, set `enabled: false` for its exact tool name.
+Default tool budgets: `bash` and unclassified tools retain the global 1500 head / 5000 tail split. Literal `mcporter call exa.web_search_exa` / `exa.web_fetch_exa` and single-URL `curl` commands targeting `r.jina.ai` also use the head-first split when executed by `bash`; shell chains, expansions, unrelated URLs, and other commands retain the bash defaults. `web`, tools prefixed with `web_`, `web-`, or `web.`, `fetch`, and tools prefixed with `mcp__`, `mcp_`, `mcp-`, or `mcp.` allocate the larger global budget to the head and the smaller to the tail (5000 / 1500 by default, with the same total). Family boundaries exclude unrelated names such as `webhook`. Each explicit `overrides` field takes priority; omitted fields use the family default. To let the official spill policy handle a web/MCP tool alone, set `enabled: false` for its exact tool name.
 
 ## Metrics
 
