@@ -42,6 +42,22 @@ Traditional context optimization tools (like compaction pruners) act **passively
 
 ---
 
+## Scope & Supported Commands
+
+| Layer | What It Covers | Explicitly Not Covered / Passed Through |
+|---|---|---|
+| **Mechanical Trimming** | Accepted text tool outputs exceeding `thresholdChars` (default `10,000` chars) via `tools/post-execute` | `read`, `read_image` (excluded by default), non-text blocks (e.g. images), valid JSON under default `structuredOutput.mode: preserve`, bypassed commands |
+| **Git Reducer** | Direct `git status` and hunk `git diff` (with optional single literal `cd <dir> &&` and trailing `2>&1`) | `git log`, `git diff --stat`, `git status -s`, `git -C ...`, shell chains/pipes (`&&`, `;`, `\|`), non-zero exits |
+| **Package Manager Reducer** | Direct `npm`/`pnpm`/`yarn`/`pip`/`pip3` package operations (`install`, `add`, `ci`, `update`, `audit`, etc.) | Script aliases (`npm run ...`), shell chains, error outputs |
+| **Test Reducer** | Passing runs of `node --test`, `vitest`, `jest`, `pytest`, `cargo test`, `npm/pnpm/yarn/go test` | Any failure, warning/error keyword, cancellation, skipped/todo count > 0, or `npm run test` |
+| **Build Reducer** | Passing progress lines of `vite build`, `cargo build`, `webpack --progress` (direct or via `npx`/`* exec`) | `tsc`, `npm run build`, watch mode (`-w`/`--watch`), any warning/error/file path line |
+| **Lint Reducer** | Duplicate `Checking formatting...` lines in passing `prettier --check` / `-c` | `eslint`, `ruff`, `biome`, `prettier --write`, any diagnostic or failure |
+| **General Shell Tools** | Mechanical head/tail trimming only when output exceeds `thresholdChars` | `grep`/`rg`, `sed`, `awk`, `python`, `gh`, `curl`, custom scripts (no semantic reducer; linear O(1) skip) |
+
+> **Tip**: If your workflow rarely runs the five supported command shapes above and you want pure mechanical head/tail trimming only, set `semanticReducers: { enabled: false }`. To measure real savings and reducer hit counts in your own sessions, enable `metrics: { enabled: true }`.
+
+---
+
 ## Installation
 
 ### Via DSH Plugin CLI (Recommended)

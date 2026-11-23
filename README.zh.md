@@ -42,6 +42,22 @@
 
 ---
 
+## 能力边界与支持命令一览
+
+| 处理层 | 实际覆盖范围 | 明确不处理 / 原样放行 |
+|---|---|---|
+| **机械首尾裁剪** | 经 `tools/post-execute` 返回且超过 `thresholdChars`（默认 `10,000` 字符）的文本工具输出 | `read`、`read_image`（默认排除）、图片等非文本块、默认 `structuredOutput.mode: preserve` 下的合法 JSON、带旁路标记的命令 |
+| **Git Reducer** | 直接执行的 `git status` 与含 hunk 的 `git diff`（可带单个字面量 `cd <dir> &&` 与末尾 `2>&1`） | `git log`、`git diff --stat`、`git status -s`、`git -C ...`、管道/命令链（`&&`/`;`/`\|`）、非零退出 |
+| **Package Manager Reducer** | 直接执行的 `npm`/`pnpm`/`yarn`/`pip`/`pip3` 包操作（`install`、`add`、`ci`、`update`、`audit` 等） | 脚本别名（`npm run ...`）、复合命令链、任何报错输出 |
+| **Test Reducer** | 全量通过的 `node --test`、`vitest`、`jest`、`pytest`、`cargo test`、`npm/pnpm/yarn/go test` | 任意失败、告警/错误关键字、取消/跳过用例、或 `npm run test` |
+| **Build Reducer** | 明确成功的 `vite build`、`cargo build`、`webpack --progress` 进度行（支持直接执行或 `npx`/`* exec`） | `tsc`、`npm run build`、监听模式（`-w`/`--watch`）、含告警/错误/文件路径的行 |
+| **Lint Reducer** | 明确成功的 `prettier --check` / `-c` 重复 `Checking formatting...` 行 | `eslint`、`ruff`、`biome`、`prettier --write`、任何诊断或报错 |
+| **通用 Shell 工具** | 仅在输出超过 `thresholdChars` 时触发机械首尾裁剪 | `grep`/`rg`、`sed`、`awk`、`python`、`gh`、`curl`、自定义脚本（无语义压缩，O(1) 直接跳过） |
+
+> **提示**：如果你的日常会话以通用脚本/管道为主，只需纯首尾裁剪，可配置 `semanticReducers: { enabled: false }` 关闭语义压缩层；如需量化实际节省字节数与压缩器命中率，可开启 `metrics: { enabled: true }`。
+
+---
+
 ## 安装
 
 ### 通过 DSH 插件命令安装（推荐）
