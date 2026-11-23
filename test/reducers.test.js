@@ -261,6 +261,21 @@ test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
     assert.equal(res, '✓ Cargo tests passed: 12 passed, 0 failed (0.08s)');
   });
 
+  it('keeps Cargo summaries for multiple targets and for incomplete test runs', () => {
+    const exec = { arguments: { command: 'cargo test' } };
+    const summary = 'test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s';
+    for (const raw of [
+      `${summary}\r\n\r\n${summary.replace('2 passed', '4 passed')}`,
+      `${summary}\n${summary.replace('2 passed', '0 passed')}`,
+      summary.replace('0 ignored', '1 ignored'),
+      summary.replace('0 measured', '1 measured'),
+      summary.replace('0 filtered out', '1 filtered out'),
+      summary.replace('2 passed', '0 passed')
+    ]) {
+      assert.equal(reduceTestOutput(exec, raw, { exitCode: 0 }), null, raw);
+    }
+  });
+
   it('should strictly fail-open when tests fail', () => {
     const raw = `✖ test 1 (1.2ms)
   AssertionError [ERR_ASSERTION]: Expected true to be false

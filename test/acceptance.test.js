@@ -145,14 +145,6 @@ describe('P0/P1 acceptance regressions', () => {
     }
   });
 
-  it('returns null on lock contention without removing another writer lock', () => {
-    const dir = directory('locked');
-    const lock = path.join(dir, '.dsh-trimmer.lock');
-    fs.writeFileSync(lock, 'other writer');
-    assert.equal(writeSpillover('output', { enabled: true, directory: dir }), null);
-    assert.equal(fs.readFileSync(lock, 'utf8'), 'other writer');
-  });
-
   it('removes partial temporary files and releases the lock after write or rename failures', (t) => {
     const dir = directory('atomic-failures');
     const write = fs.writeFileSync;

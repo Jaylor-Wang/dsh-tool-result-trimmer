@@ -6,7 +6,9 @@ import path from 'node:path';
 import { createRequire, registerHooks } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { apply } from '../lib/index.js';
-import { findRecoveryNotices } from '../lib/spill-recovery.js';
+import { inspectRecoveryNotices } from '../lib/spill-recovery.js';
+
+const findRecoveryNotices = text => inspectRecoveryNotices(text).notices;
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-trimmer-recovery-'));
 after(() => {
@@ -74,12 +76,12 @@ describe('upstream spill recovery', () => {
     } });
     try {
       const { formatSpillNotice, hasSpillNotice } = await import(pathToFileURL(peer).href);
-      const { findRecoveryNotices: recognize } = await import('../lib/spill-recovery.js?official-notice-acceptance');
+      const { inspectRecoveryNotices: inspect } = await import('../lib/spill-recovery.js?official-notice-acceptance');
       for (const omitted of [{ kind: 'none' }, { kind: 'unknown' }, { kind: 'exact', count: 12345 }]) {
         for (const images of [0, 2]) {
           const notice = formatSpillNotice(omitted, ref, images);
           assert.equal(hasSpillNotice(notice), true);
-          assert.deepEqual(recognize(`preview\n\n${notice}`), [notice]);
+          assert.deepEqual(inspect(`preview\n\n${notice}`), { notices: [notice], wholeResult: true });
           assert.deepEqual(findRecoveryNotices(`preview\n\n${notice}`), [notice]);
         }
       }
@@ -96,8 +98,8 @@ describe('upstream spill recovery', () => {
     ]) assert.deepEqual(findRecoveryNotices(text), [], text);
   });
 
-  it('reuses upstream notices without either storage backend, even with no retained tail', async () => {
-    for (const notice of [bashNotice, officialNotice]) {
+  it('reuses whole-result recovery without either storage backend, even with no retained tail', async () => {
+    for (const notice of [officialNotice, `${bashNotice}\n\n${officialNotice}`]) {
       const host = backend();
       const events = [];
       const outcome = await run(blocks(`${raw}\n\n${notice}\n`), {
@@ -105,8 +107,9 @@ describe('upstream spill recovery', () => {
         config: { tailChars: 0, metrics: { enabled: true, onEvent: event => events.push(event) } }
       });
       assert.match(project(outcome.content), /tool output trimmed/);
-      assert.ok(project(outcome.content).includes(notice));
-      assert.doesNotMatch(project(outcome.content), /full output saved to/);
+      assert.ok(project(outcome.content).includes(officialNotice));
+      if (notice.startsWith(bashNotice)) assert.ok(project(outcome.content).includes(bashNotice));
+      assert.doesNotMatch(project(outcome.content), /(?:full output|pre-trim preview) saved to/);
       assert.equal(host.calls.length, 0);
       assert.equal(fs.existsSync(outcome.directory), false);
       assert.equal(events[0].spillover, 'not-attempted');
@@ -126,8 +129,37 @@ describe('upstream spill recovery', () => {
     assert.ok(project(output).includes(bashNotice));
     assert.ok(project(output).includes(second));
     assert.ok(output.includes(image));
-    assert.equal(host.calls.length, 0);
+    assert.equal(host.calls.length, 1);
+    assert.equal(host.calls[0].content, project(content));
+    assert.match(project(output), /pre-trim preview saved to spill:\/\//);
     assert.equal(fs.existsSync(directory), false);
+  });
+
+  it('backs up diagnostics omitted from the preview even with a missing or stdout-only locator', async () => {
+    for (const notice of ['[output truncated; full output: (unavailable)]', bashNotice]) {
+      const host = backend();
+      const diagnostic = 'UNIQUE_STDERR_DIAGNOSTIC';
+      const text = `${raw}\n${notice}\n[stderr]\n${raw}${diagnostic}\n${raw}[exit code: 1]`;
+      const { content, directory } = await run(blocks(text), { context: host.context });
+      const output = project(content);
+      assert.ok(output.includes(notice));
+      assert.ok(!output.includes(diagnostic));
+      assert.match(output, /pre-trim preview saved to spill:\/\//);
+      assert.doesNotMatch(output, /full output saved to/);
+      assert.equal(host.calls.length, 1);
+      assert.equal(host.calls[0].content, text);
+      assert.equal(fs.existsSync(directory), false);
+    }
+  });
+
+  it('labels a local backup of an already truncated stream as a preview', async () => {
+    const text = `${raw}\n${bashNotice}`;
+    const { content, directory } = await run(blocks(text));
+    const files = fs.readdirSync(directory);
+    assert.equal(files.length, 1);
+    const saved = path.join(directory, files[0]);
+    assert.equal(fs.readFileSync(saved, 'utf8'), text);
+    assert.ok(project(content).includes(`pre-trim preview saved to ${saved}`));
   });
 
   it('recognizes notices split across adjacent text blocks', async () => {
@@ -138,17 +170,21 @@ describe('upstream spill recovery', () => {
         { type: 'text', text: notice.slice(25) }
       ], { context: host.context, config: { tailChars: 0 } });
       assert.ok(project(content).includes(notice));
-      assert.equal(host.calls.length, 0);
+      assert.equal(host.calls.length, notice === bashNotice ? 1 : 0);
       assert.equal(fs.existsSync(directory), false);
     }
   });
 
   it('keeps existing recovery guidance when new spill writes are disabled', async () => {
-    const { content, directory } = await run(blocks(`${raw}\n\n${officialNotice}`), {
-      config: { tailChars: 0, spillover: { enabled: false } }
-    });
-    assert.ok(project(content).includes(officialNotice));
-    assert.equal(fs.existsSync(directory), false);
+    for (const notice of [bashNotice, officialNotice]) {
+      const host = backend();
+      const { content, directory } = await run(blocks(`${raw}\n\n${notice}`), {
+        context: host.context, config: { tailChars: 0, spillover: { enabled: false } }
+      });
+      assert.ok(project(content).includes(notice));
+      assert.equal(host.calls.length, 0);
+      assert.equal(fs.existsSync(directory), false);
+    }
   });
 
   it('does not treat notice-shaped JSON values as existing recovery metadata', async () => {

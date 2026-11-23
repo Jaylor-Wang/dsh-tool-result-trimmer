@@ -201,7 +201,7 @@ Complete raw JSON is recognized before ANSI stripping and semantic reducers, usi
 
 Text blocks are concatenated in order without inserting separators. Character budgets use UTF-16 code units; CRLF is preserved. Semantic reducers only process results containing exactly one text block. Spillover saves this projection before ANSI stripping or semantic reduction; images and other non-text blocks remain in the returned result.
 
-Complete `[output truncated; full output: …]` lines and final official spill-policy notices are retained even when the configured tail budget would remove them. Their existing recovery location and guidance are reused without writing the already-truncated preview again, including when new spill writes are disabled. Recognition follows a text convention; it does not authenticate the producer or verify that its locator remains available.
+Complete `[output truncated; full output: …]` lines and final official spill-policy notices are retained even when the configured tail budget would remove them or new spill writes are disabled. Only a final official whole-result notice suppresses a new backup. Shell notices describe individual streams and may report `(unavailable)`; when a new backup is otherwise due, the plugin saves the text it received and labels it `pre-trim preview`, without claiming to recover output already omitted upstream. Recognition follows a text convention; it does not authenticate the producer or verify that its locator remains available.
 
 New spills prefer `ctx.spillStore.saveText` with the producing session ID, tool name, and call ID. Opaque locators are displayed verbatim with `retrievalHint`; JSON array summaries carry the locator in `spilloverPath` and add `spilloverRetrievalHint` when provided. `maxFileBytes` applies to both storage paths. The backend owns retention for session storage; `directory`, `maxTotalBytes`, `maxFiles`, and `ttlMs` apply only to the local fallback. Missing capability or session/source metadata selects local storage. Backend errors keep ordinary trimming without a success notice or a second write attempt.
 
@@ -229,7 +229,7 @@ node scripts/spill-lock.js --directory "PATH_TO_SPILL_DIRECTORY" --apply --write
 
 ## Validation
 
-Run `npm test` and `npm run benchmark` for behavior and performance checks. `npm run typecheck` checks public declarations against the real optional Cordis peer using a locally available TypeScript compiler; both may be resolved through `NODE_PATH` when supplied by a host installation. Missing peers produce an explicit failure, and no dependencies are installed or declarations stubbed. The portable project configuration checks public declarations only; JavaScript files are validated separately through file diagnostics and behavioral tests.
+Run `npm test` for behavior checks. Run the performance benchmark separately with `npm run benchmark`. `npm run typecheck` checks public declarations against the real optional Cordis peer using a locally available TypeScript compiler; both may be resolved through `NODE_PATH` when supplied by a host installation. Missing peers produce an explicit failure, and no dependencies are installed or declarations stubbed. The portable project configuration checks public declarations only; JavaScript files are validated separately through file diagnostics and behavioral tests.
 
 ## License
 

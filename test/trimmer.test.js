@@ -187,15 +187,6 @@ describe('trimToolContent', () => {
     assert.ok(res.content[1].text.includes('[... tool output trimmed:'));
   });
 
-  it('should return original content if total text within threshold', () => {
-    const blocks = [
-      { type: 'text', text: 'Small output' }
-    ];
-    const res = trimToolContent(blocks, { thresholdChars: 10000 });
-    assert.equal(res.changed, false);
-    assert.equal(res.content, blocks);
-  });
-
   it('should strip ANSI escape sequences even if text is within threshold', () => {
     const blocks = [
       { type: 'text', text: '\x1b[32mPASS\x1b[0m test/app.test.js' }
@@ -268,7 +259,7 @@ describe('trimToolContent', () => {
     assert.ok(res.content[2].text.endsWith('End log summary'));
   });
 
-  it('should achieve true 0-allocation pass-through when input is within threshold and has no ANSI', () => {
+  it('preserves the original array and block references for short plain text', () => {
     const blocks = [
       { type: 'text', text: 'Clean output line 1' },
       { type: 'text', text: 'Clean output line 2' }

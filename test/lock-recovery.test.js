@@ -70,7 +70,7 @@ describe('Abandoned spill lock recovery', () => {
   });
 
   it('preserves old live locks and malformed or incomplete metadata', () => {
-    const values = [owner(process.pid), '', 'legacy lock', '{}', 'null',
+    const values = [owner(process.pid), '', 'legacy lock', 'other writer', '{}', 'null',
       JSON.stringify({ pid: 0, token }), JSON.stringify({ pid: -1, token }),
       JSON.stringify({ pid: 2147483648, token }), JSON.stringify({ pid: String(deadPid), token }),
       JSON.stringify({ pid: deadPid, token: '../unexpected' }), 'x'.repeat(257)];

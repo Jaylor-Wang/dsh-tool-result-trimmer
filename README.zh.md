@@ -201,7 +201,7 @@ pnpm add dsh-tool-result-trimmer
 
 多个文本 block 按原顺序直接拼接，不额外插入分隔符。字符预算按 UTF-16 代码单元计算，保留 CRLF。语义压缩仅处理恰好包含一个文本 block 的结果。落盘保存 ANSI 清理和语义压缩之前的上述文本投影；图片等非文本 block 保留在返回结果中。
 
-完整的 `[output truncated; full output: …]` 提示行和结尾的官方 spill-policy 提示会保留，即使尾部预算不足也不会丢失。插件直接复用其中的恢复位置及读取指引，不再保存已经截断的预览；关闭新增落盘时也保留已有提示。这只是文本约定识别，不认证来源，也不检查定位符是否仍可访问。
+完整的 `[output truncated; full output: …]` 提示行和结尾的官方 spill-policy 提示会保留，即使尾部预算不足或关闭新增落盘也不例外。只有结尾的官方整份结果恢复提示才会阻止重复备份。Shell 提示仅对应单个输出流，也可能显示 `(unavailable)`；满足新增落盘条件时，插件保存自己收到的文本，并标记为 `pre-trim preview`，不声称能恢复上游已省略的内容。这只是文本约定识别，不认证来源，也不检查定位符是否仍可访问。
 
 新增存储优先调用 `ctx.spillStore.saveText`，传入产生结果的会话 ID、工具名和调用 ID；定位符按原样展示，并保留 `retrievalHint`。JSON 数组摘要将定位符放入 `spilloverPath`，后端提供读取指引时增加 `spilloverRetrievalHint`。`maxFileBytes` 对两种存储均生效；会话存储的保留策略由后端管理，`directory`、`maxTotalBytes`、`maxFiles`、`ttlMs` 仅约束本地回退目录。缺少存储能力或会话/来源信息时使用本地存储。后端报错时仍正常裁剪，不宣称保存成功，也不再尝试第二次写入。
 
@@ -229,7 +229,7 @@ node scripts/spill-lock.js --directory "PATH_TO_SPILL_DIRECTORY" --apply --write
 
 ## 验证
 
-使用 `npm test` 和 `npm run benchmark` 验证行为与性能。`npm run typecheck` 使用已有 TypeScript 编译器和真实的可选 Cordis peer 检查公开声明；宿主提供的两者可通过 `NODE_PATH` 解析。缺失依赖会明确失败，不安装依赖、不伪造声明。项目配置不含本机绝对路径，仅检查公开声明；JavaScript 另行通过文件级诊断与行为测试验证。
+使用 `npm test` 验证功能；性能基准通过 `npm run benchmark` 单独运行。`npm run typecheck` 使用已有 TypeScript 编译器和真实的可选 Cordis peer 检查公开声明；宿主提供的两者可通过 `NODE_PATH` 解析。缺失依赖会明确失败，不安装依赖、不伪造声明。项目配置不含本机绝对路径，仅检查公开声明；JavaScript 另行通过文件级诊断与行为测试验证。
 
 ## 开源协议
 

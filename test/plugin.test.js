@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { apply } from '../lib/index.js';
+import { ANSI_REGEX, ENV_BYPASS_REGEX, COMMENT_BYPASS_REGEX, apply } from 'dsh-tool-result-trimmer';
+import * as trimmer from '../lib/trimmer.js';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-trimmer-plugin-'));
 after(() => {
@@ -13,6 +14,12 @@ after(() => {
 });
 
 describe('tool-result-trimmer plugin', () => {
+  it('exports the declared regex constants through the package entry point', () => {
+    assert.equal(ANSI_REGEX, trimmer.ANSI_REGEX);
+    assert.equal(ENV_BYPASS_REGEX, trimmer.ENV_BYPASS_REGEX);
+    assert.equal(COMMENT_BYPASS_REGEX, trimmer.COMMENT_BYPASS_REGEX);
+  });
+
   function createMockCtx() {
     const listeners = [];
     return {
